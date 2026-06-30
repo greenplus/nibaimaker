@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>にばいめーかー new</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app-shell" id="app">
+    <header class="topbar">
+      <div>
+        <h1>にばいめーかー</h1>
+        <p class="subtitle">カードを下段へ並べて、2倍になる因子を見つける。</p>
+      </div>
+      <div class="stats" aria-label="進行状況">
+        <span id="progress">1 / 10</span>
+        <span id="timer">0.0s</span>
+      </div>
+    </header>
+
+    <section class="playfield" aria-label="解答盤面">
+      <div class="equation" id="equation">
+        <div class="row top-row" id="top-row" aria-label="上段"></div>
+        <div class="row bottom-row">
+          <span class="equals">=</span>
+          <span class="fixed-multiplier">2</span>
+          <span class="times">x</span>
+          <div class="bottom-slots" id="bottom-row" aria-label="下段"></div>
+        </div>
+      </div>
+      <div class="judge-flash" id="judge-flash" aria-hidden="true"></div>
+    </section>
+
+    <section class="card-zone" aria-label="カード置き場">
+      <div class="zone-head">
+        <span>カード</span>
+        <button id="reset-board" type="button">盤面を戻す</button>
+      </div>
+      <div class="pool" id="pool"></div>
+    </section>
+
+    <section class="result-strip" aria-live="polite">
+      <p id="feedback">下段が埋まると自動で判定します。</p>
+      <a class="tweet-link" id="tweet-link" target="_blank" rel="noreferrer" hidden>結果を共有</a>
+    </section>
+
+    <section class="history" aria-label="履歴">
+      <h2>履歴</h2>
+      <div id="history-list"></div>
+    </section>
+  </main>
+
+  <script src="game.js"></script>
+</body>
+</html>

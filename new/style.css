@@ -1,0 +1,365 @@
+:root {
+  --bg: #f7f8fb;
+  --ink: #202536;
+  --muted: #697084;
+  --line: #d9deea;
+  --slot: #ffffff;
+  --card: #fffdf8;
+  --accent: #3167d6;
+  --green: #dff6e6;
+  --yellow: #fff4bd;
+  --factor: #4a9a68;
+  font-family: "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", Meiryo, system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  color: var(--ink);
+  background: linear-gradient(180deg, #ffffff 0%, var(--bg) 38%, #edf1f7 100%);
+}
+
+button,
+a,
+.card {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app-shell {
+  width: min(1040px, calc(100% - 28px));
+  margin: 0 auto;
+  padding: 22px 0 32px;
+}
+
+.topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: clamp(1.55rem, 3vw, 2.15rem);
+  letter-spacing: 0;
+}
+
+.subtitle {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 0.96rem;
+}
+
+.stats {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.stats span,
+.zone-head button,
+.tweet-link {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  padding: 7px 12px;
+  color: var(--ink);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.playfield {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+  padding: clamp(18px, 4vw, 34px);
+  box-shadow: 0 16px 42px rgba(36, 48, 82, 0.08);
+}
+
+.judge-flash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.judge-flash.correct,
+.judge-flash.divisible {
+  animation: flash 560ms ease-out;
+}
+
+.judge-flash.correct {
+  background: var(--green);
+}
+
+.judge-flash.divisible {
+  background: var(--yellow);
+}
+
+@keyframes flash {
+  0% { opacity: 0; }
+  18% { opacity: 0.86; }
+  100% { opacity: 0; }
+}
+
+.equation {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 14px;
+  justify-content: center;
+  padding: 2px 0;
+}
+
+.row,
+.bottom-slots {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: var(--slot-size);
+  gap: var(--slot-gap);
+  align-items: center;
+}
+
+.equation {
+  --slot-size: clamp(44px, 9vw, 74px);
+  --slot-gap: clamp(6px, 1.6vw, 12px);
+}
+
+.top-row {
+  padding-left: calc((var(--slot-size) + var(--slot-gap)) * 1.8);
+}
+
+.bottom-row {
+  grid-template-columns: auto auto auto auto;
+  justify-content: start;
+}
+
+.equals,
+.times {
+  font-size: clamp(1.5rem, 4vw, 2.2rem);
+  font-weight: 800;
+}
+
+.fixed-multiplier {
+  display: grid;
+  place-items: center;
+  width: var(--slot-size);
+  height: var(--slot-size);
+  border-radius: 8px;
+  background: #e9eefc;
+  border: 2px solid #b9c8f4;
+  color: #244aa5;
+  font-size: clamp(1.35rem, 4vw, 2.05rem);
+  font-weight: 900;
+}
+
+.slot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--slot-size);
+  height: var(--slot-size);
+  border: 2px dashed #c5ccdb;
+  border-radius: 8px;
+  background: var(--slot);
+}
+
+.slot.drag-over {
+  border-color: var(--accent);
+  background: #eef4ff;
+}
+
+.slot::after {
+  content: attr(data-col);
+  position: absolute;
+  right: 5px;
+  bottom: 3px;
+  color: #bac1cf;
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+
+.card-zone {
+  margin-top: 16px;
+}
+
+.zone-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.zone-head button {
+  cursor: pointer;
+}
+
+.pool {
+  min-height: 104px;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 10px;
+  padding: 14px;
+  border: 2px dashed #c9d0dd;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.pool.drag-over {
+  border-color: var(--accent);
+  background: #eef4ff;
+}
+
+.card {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: min(70px, 18vw);
+  height: min(70px, 18vw);
+  min-width: 44px;
+  min-height: 44px;
+  border: 2px solid #d7c391;
+  border-radius: 8px;
+  background: var(--card);
+  box-shadow: 0 5px 13px rgba(62, 50, 27, 0.12);
+  color: #2d2b25;
+  cursor: grab;
+  font-size: clamp(1.35rem, 4vw, 2.15rem);
+  font-weight: 900;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+.slot .card {
+  width: calc(var(--slot-size) - 8px);
+  height: calc(var(--slot-size) - 8px);
+  min-width: 0;
+  min-height: 0;
+  box-shadow: none;
+}
+
+.card:active {
+  cursor: grabbing;
+}
+
+.card.drag-source {
+  opacity: 0.38;
+}
+
+.drag-ghost {
+  position: fixed;
+  z-index: 20;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.card.factor {
+  border-color: var(--factor);
+  background: #f4fff6;
+}
+
+.card.factor::before,
+.card.factor::after {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 22px;
+  border-radius: 999px;
+  background: #d9f0df;
+  border: 2px solid var(--factor);
+}
+
+.card.bump-left::before {
+  content: "";
+  left: -11px;
+}
+
+.card.notch-right::after {
+  content: "";
+  right: -7px;
+  background: var(--slot);
+  border-color: var(--factor);
+}
+
+.card.in-group {
+  box-shadow: inset 0 0 0 2px rgba(74, 154, 104, 0.18);
+}
+
+.result-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  min-height: 44px;
+}
+
+#feedback {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.history {
+  margin-top: 20px;
+  color: var(--muted);
+}
+
+.history h2 {
+  margin-bottom: 8px;
+  font-size: 1rem;
+}
+
+#history-list {
+  display: grid;
+  gap: 6px;
+  font-size: 0.9rem;
+}
+
+.history-entry {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+@media (max-width: 700px) {
+  .topbar,
+  .result-strip {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .stats {
+    justify-content: flex-start;
+  }
+
+  .playfield {
+    overflow-x: auto;
+  }
+
+  .equation {
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .top-row {
+    padding-left: calc((var(--slot-size) + var(--slot-gap)) * 2.05);
+  }
+}
