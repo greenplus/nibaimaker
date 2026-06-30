@@ -447,11 +447,10 @@
     panel.className = "start-panel";
     panel.innerHTML = `
       <div class="start-panel-inner">
-        <h2>にばいめーかー</h2>
         <div class="setting-list">
           ${settingToggle("tapFill", "タップ配置", [
             ["left", "左から"],
-            ["right", "右詰め"]
+            ["right", "右から"]
           ])}
           ${settingToggle("showHints", "因子候補", [
             ["off", "オフ"],
@@ -471,13 +470,15 @@
 
   function settingToggle(key, label, options) {
     return `
-      <fieldset class="setting-toggle" data-setting="${key}">
-        <legend>${label}</legend>
-        ${options.map(([value, text]) => {
-          const checked = settingValue(key) === value ? " checked" : "";
-          return `<label><input type="radio" name="${key}" value="${value}"${checked}>${text}</label>`;
-        }).join("")}
-      </fieldset>
+      <div class="setting-toggle" data-setting="${key}" role="group" aria-label="${label}">
+        <span class="setting-label">${label}</span>
+        <div class="switch-control">
+          ${options.map(([value, text]) => {
+            const checked = settingValue(key) === value ? " checked" : "";
+            return `<label><input type="radio" name="${key}" value="${value}"${checked}><span>${text}</span></label>`;
+          }).join("")}
+        </div>
+      </div>
     `;
   }
 

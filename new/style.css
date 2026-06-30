@@ -106,46 +106,77 @@ h1 {
 .start-panel-inner {
   width: min(520px, 100%);
   display: grid;
-  gap: 16px;
+  gap: 14px;
   justify-items: center;
-}
-
-.start-panel h2 {
-  font-size: 1.6rem;
-  color: var(--ink);
 }
 
 .setting-list {
   width: 100%;
   display: grid;
-  gap: 10px;
+  gap: 9px;
 }
 
 .setting-toggle {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(5.7em, max-content) minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
   margin: 0;
-  padding: 10px 12px;
+  min-width: 0;
+  padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
 }
 
-.setting-toggle legend {
-  padding: 0 6px;
-  color: var(--muted);
-  font-size: 0.84rem;
-  font-weight: 700;
-}
-
-.setting-toggle label {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+.setting-label {
+  color: var(--ink);
+  font-size: clamp(0.78rem, 2.6vw, 0.92rem);
   font-weight: 700;
   white-space: nowrap;
+}
+
+.switch-control {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  padding: 3px;
+  border: 1px solid #cbd4e2;
+  border-radius: 999px;
+  background: #edf1f7;
+}
+
+.switch-control label {
+  min-width: 0;
+}
+
+.switch-control input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.switch-control span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0 8px;
+  border-radius: 999px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: clamp(0.74rem, 2.5vw, 0.9rem);
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+.switch-control input:checked + span {
+  background: #fff;
+  color: var(--accent);
+  box-shadow: 0 2px 8px rgba(36, 48, 82, 0.14);
 }
 
 .start-button {
