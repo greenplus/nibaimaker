@@ -34,9 +34,7 @@
     ["T6", "2Q"], ["T6", "2K"]
   ];
 
-  const FACTOR_PAIRS = RAW_FACTOR_PAIRS
-    .filter(([bottom, top]) => !`${expandSymbols(bottom)}${expandSymbols(top)}`.includes("0"))
-    .map(makeFactorPattern);
+  const FACTOR_PAIRS = RAW_FACTOR_PAIRS.map(makeFactorPattern);
 
   const state = {
     quizList: [],
@@ -50,6 +48,7 @@
     slots: new Map(),
     groups: new Map(),
     pointerDrag: null,
+    pointerWasDrag: false,
     suppressClickUntil: 0,
     finished: false,
     started: false,
@@ -395,6 +394,7 @@
       const bottom = pattern.bottom.length === 1 ? pattern.bottom[0].label : null;
       const top = pattern.top.length === 1 ? pattern.top[0].label : null;
       if (!bottom || !top) return;
+      if (bottom === "0" || top === "0") return;
       if (asRow === "bottom" && bottom === label) labels.add(top);
       if (asRow === "top" && top === label) labels.add(bottom);
     });
@@ -432,6 +432,7 @@
     state.started = false;
     state.finished = false;
     initSlots(5, 5);
+    els.playfield.classList.add("menu-open");
     els.equation.classList.add("is-waiting");
     els.pool.innerHTML = "";
     els.history.innerHTML = "";
@@ -503,6 +504,7 @@
 
   function startGame() {
     els.playfield.querySelector(".start-panel")?.remove();
+    els.playfield.classList.remove("menu-open");
     els.equation.classList.remove("is-waiting");
     state.currentQuiz = 0;
     state.finished = false;
@@ -517,6 +519,10 @@
   }
 
   function onCardClick(event) {
+    if (state.pointerWasDrag) {
+      state.pointerWasDrag = false;
+      return;
+    }
     if (Date.now() < state.suppressClickUntil) return;
     const cardId = event.currentTarget.dataset.cardId;
     const card = state.cards.get(cardId);
@@ -526,9 +532,7 @@
       return;
     }
 
-    const emptyIndex = findTapBottomFit(card);
-    if (emptyIndex === -1) return;
-    placeSingleCard(cardId, { type: "slot", row: "bottom", index: emptyIndex });
+    tapPlaceCard(card);
   }
 
   function onPointerDown(event) {
@@ -542,7 +546,8 @@
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      active: false
+      active: false,
+      startedInPool: card.location.type === "pool"
     };
     card.element.setPointerCapture?.(event.pointerId);
     window.addEventListener("pointermove", onPointerMove, { passive: false });
@@ -557,7 +562,14 @@
 
     const dx = event.clientX - drag.startX;
     const dy = event.clientY - drag.startY;
-    if (!drag.active && Math.hypot(dx, dy) < 8) return;
+    if (!drag.active) {
+      const distance = Math.hypot(dx, dy);
+      if (drag.startedInPool && !isPointInBoard(event.clientX, event.clientY)) {
+        if (distance < 34) return;
+      } else if (distance < 8) {
+        return;
+      }
+    }
 
     event.preventDefault();
     if (!drag.active) startPointerDrag(drag, event);
@@ -569,6 +581,13 @@
   function onPointerUp(event) {
     const drag = state.pointerDrag;
     if (!drag || !drag.active) {
+      if (drag?.startedInPool) {
+        const card = state.cards.get(drag.cardId);
+        if (card && !card.groupId) {
+          tapPlaceCard(card);
+          state.pointerWasDrag = true;
+        }
+      }
       cleanupDrag({ restore: true });
       return;
     }
@@ -576,6 +595,7 @@
     const cardId = drag.cardId;
     const target = findNearestDrop(cardId, event.clientX, event.clientY);
     cleanupDrag({ restore: !target });
+    state.pointerWasDrag = true;
     state.suppressClickUntil = Date.now() + 250;
 
     if (!target) return;
@@ -588,6 +608,12 @@
 
   function onPointerCancel() {
     cleanupDrag({ restore: true });
+  }
+
+  function tapPlaceCard(card) {
+    const emptyIndex = findTapBottomFit(card);
+    if (emptyIndex === -1) return;
+    placeSingleCard(card.id, { type: "slot", row: "bottom", index: emptyIndex });
   }
 
   function startPointerDrag(drag, event) {
@@ -789,6 +815,10 @@
     return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
   }
 
+  function isPointInBoard(x, y) {
+    return pointInRect(x, y, els.playfield.getBoundingClientRect());
+  }
+
   function placeCardOrGroup(cardId, target) {
     const card = state.cards.get(cardId);
     if (!card || state.finished) return;
@@ -824,6 +854,8 @@
       returnGroupToPool(group);
       return;
     }
+
+    if (group.immovable) return;
 
     if (card.location.type !== "slot") return;
     const delta = target.index - card.location.index;
@@ -1114,10 +1146,15 @@
     matches
       .sort((a, b) => b.width - a.width)
       .forEach((match, index) => {
-        if (match.cardIds.length < 2) return;
+        if (match.cardIds.length < 1) return;
         if (match.cardIds.some((id) => usedCards.has(id))) return;
         const groupId = `group-${index}`;
-        state.groups.set(groupId, { id: groupId, cardIds: match.cardIds, match });
+        state.groups.set(groupId, {
+          id: groupId,
+          cardIds: match.cardIds,
+          match,
+          immovable: match.usesVirtualZero || match.cardIds.length < 2
+        });
         acceptedMatches.push({ ...match, groupId });
         match.cardIds.forEach((id) => {
           usedCards.add(id);
@@ -1132,13 +1169,14 @@
 
   function matchPattern(pattern, topStart) {
     const cardIds = [];
+    const virtualCells = [];
 
     for (const token of pattern.top) {
-      if (!matchToken("top", topStart + token.start, token, cardIds)) return null;
+      if (!matchToken("top", topStart + token.start, token, cardIds, virtualCells)) return null;
     }
 
     for (const token of pattern.bottom) {
-      if (!matchToken("bottom", topStart + token.start - bottomOffset(), token, cardIds)) return null;
+      if (!matchToken("bottom", topStart + token.start - bottomOffset(), token, cardIds, virtualCells)) return null;
     }
 
     return {
@@ -1146,6 +1184,8 @@
       cardIds: [...new Set(cardIds)],
       topRun: tokenRun(pattern.top, topStart),
       bottomRun: tokenRun(pattern.bottom, topStart - bottomOffset()),
+      virtualCells,
+      usesVirtualZero: virtualCells.length > 0,
       carryIn: pattern.carryIn,
       carryOut: pattern.carryOut
     };
@@ -1167,18 +1207,26 @@
     if (!match.topRun || !match.bottomRun) return;
     const topFirst = getSlotElement("top", match.topRun.start);
     const topLast = getSlotElement("top", match.topRun.end - 1);
-    const bottomFirst = getSlotElement("bottom", match.bottomRun.start);
-    const bottomLast = getSlotElement("bottom", match.bottomRun.end - 1);
-    if (!topFirst || !topLast || !bottomFirst || !bottomLast) return;
+    const bottomFirst = getSlotElement("bottom", Math.max(0, match.bottomRun.start));
+    const bottomLast = getSlotElement("bottom", Math.min(state.bottomDigits - 1, match.bottomRun.end - 1));
+    if (!topFirst || !topLast) return;
 
     const root = els.equation.getBoundingClientRect();
-    const rects = [topFirst, topLast, bottomFirst, bottomLast].map((el) => el.getBoundingClientRect());
+    const rects = [topFirst, topLast].map((el) => el.getBoundingClientRect());
+    if (bottomFirst && bottomLast) rects.push(bottomFirst.getBoundingClientRect(), bottomLast.getBoundingClientRect());
+    match.virtualCells.forEach((cell) => {
+      const virtualRect = virtualCellRect(cell);
+      if (virtualRect) rects.push(virtualRect);
+    });
     const left = Math.min(...rects.map((rect) => rect.left));
     const right = Math.max(...rects.map((rect) => rect.right));
     const top = Math.min(...rects.map((rect) => rect.top));
     const bottom = Math.max(...rects.map((rect) => rect.bottom));
     const topBottom = topFirst.getBoundingClientRect().bottom;
-    const bottomTop = bottomFirst.getBoundingClientRect().top;
+    const firstVirtual = match.virtualCells.map(virtualCellRect).find(Boolean);
+    const bottomTop = bottomFirst
+      ? bottomFirst.getBoundingClientRect().top
+      : (firstVirtual ? firstVirtual.top : topFirst.getBoundingClientRect().top);
     const outline = document.createElement("div");
     outline.className = "factor-outline";
     outline.dataset.groupId = match.groupId;
@@ -1205,8 +1253,33 @@
     els.factorLayer.appendChild(outline);
   }
 
-  function matchToken(row, index, token, cardIds) {
+  function virtualCellRect(cell) {
+    if (cell.row !== "bottom" || cell.index !== -1) return null;
+    const first = getSlotElement("bottom", 0);
+    if (!first) return null;
+    const rect = first.getBoundingClientRect();
+    const slotStep = rect.width + slotGapPixels();
+    return {
+      left: rect.left - slotStep,
+      right: rect.right - slotStep,
+      top: rect.top,
+      bottom: rect.bottom,
+      width: rect.width,
+      height: rect.height
+    };
+  }
+
+  function slotGapPixels() {
+    const gap = getComputedStyle(els.equation).getPropertyValue("--slot-gap").trim();
+    return Number.parseFloat(gap) || 0;
+  }
+
+  function matchToken(row, index, token, cardIds, virtualCells) {
     const limit = row === "top" ? state.topDigits : state.bottomDigits;
+    if (token.label === "0" && row === "bottom" && index === -1 && bottomOffset() === 1) {
+      virtualCells.push({ row, index, span: token.span });
+      return true;
+    }
     if (index < 0 || index + token.span > limit) return false;
     const cardId = state.slots.get(slotKey(row, index));
     if (!cardId) return false;
