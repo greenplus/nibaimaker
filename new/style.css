@@ -121,6 +121,7 @@ h1 {
   display: grid;
   gap: 14px;
   justify-content: center;
+  justify-items: end;
   padding: 2px 0;
 }
 
@@ -139,12 +140,19 @@ h1 {
 }
 
 .top-row {
-  padding-left: calc((var(--slot-size) + var(--slot-gap)) * 1.8);
+  grid-template-columns: repeat(6, var(--slot-size));
+  width: calc(var(--slot-size) * 6 + var(--slot-gap) * 5);
 }
 
 .bottom-row {
   grid-template-columns: auto auto auto auto;
   justify-content: start;
+  justify-self: end;
+}
+
+.bottom-slots {
+  grid-template-columns: repeat(5, var(--slot-size));
+  width: calc(var(--slot-size) * 5 + var(--slot-gap) * 4);
 }
 
 .equals,
@@ -182,6 +190,10 @@ h1 {
   background: #eef4ff;
 }
 
+.slot.covered {
+  opacity: 0.72;
+}
+
 .slot::after {
   content: attr(data-col);
   position: absolute;
@@ -211,6 +223,7 @@ h1 {
 }
 
 .pool {
+  --pool-card-size: min(70px, 18vw);
   min-height: 104px;
   display: flex;
   flex-wrap: wrap;
@@ -228,11 +241,12 @@ h1 {
 }
 
 .card {
+  --span: 1;
   position: relative;
   display: grid;
   place-items: center;
-  width: min(70px, 18vw);
-  height: min(70px, 18vw);
+  width: calc(var(--pool-card-size, min(70px, 18vw)) * var(--span) + 10px * (var(--span) - 1));
+  height: var(--pool-card-size, min(70px, 18vw));
   min-width: 44px;
   min-height: 44px;
   border: 2px solid #d7c391;
@@ -244,15 +258,16 @@ h1 {
   font-size: clamp(1.35rem, 4vw, 2.15rem);
   font-weight: 900;
   user-select: none;
-  touch-action: manipulation;
+  touch-action: none;
 }
 
 .slot .card {
-  width: calc(var(--slot-size) - 8px);
+  width: calc(var(--slot-size) * var(--span) + var(--slot-gap) * (var(--span) - 1) - 8px);
   height: calc(var(--slot-size) - 8px);
   min-width: 0;
   min-height: 0;
   box-shadow: none;
+  z-index: 2;
 }
 
 .card:active {
@@ -268,6 +283,7 @@ h1 {
   z-index: 20;
   pointer-events: none;
   transform: translate(-50%, -50%);
+  opacity: 0.92;
 }
 
 .card.factor {
@@ -357,9 +373,5 @@ h1 {
   .equation {
     width: max-content;
     min-width: 100%;
-  }
-
-  .top-row {
-    padding-left: calc((var(--slot-size) + var(--slot-gap)) * 2.05);
   }
 }
