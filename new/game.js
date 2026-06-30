@@ -869,6 +869,7 @@
         row: "bottom",
         index: plan.cardIndex,
         singlePlan: plan.moves,
+        movePlan: plan.movePlan,
         insertion: { boundary: plan.boundary + bottomOffset() },
         distance: distanceToSlotBoundary("bottom", plan.boundary, x, y)
       });
@@ -879,9 +880,10 @@
 
   function planSingleBottomInsertion(card, targetCard) {
     if (card.id === targetCard.id) return null;
-    if (card.groupId || targetCard.groupId) return null;
+    if (card.groupId) return null;
     if (card.location.type !== "slot" || targetCard.location.type !== "slot") return null;
     if (card.location.row !== "bottom" || targetCard.location.row !== "bottom") return null;
+    if (targetCard.groupId) return planSingleBottomIntoGroup(card, targetCard);
 
     const sourceStart = card.location.index;
     const targetStart = targetCard.location.index;
@@ -919,6 +921,36 @@
     return { moves, cardIndex, boundary };
   }
 
+  function planSingleBottomIntoGroup(card, targetCard) {
+    const group = state.groups.get(targetCard.groupId);
+    if (!group || group.immovable) return null;
+
+    const sourceStart = card.location.index;
+    const bounds = groupBottomBounds(group);
+    if (!Number.isFinite(bounds.min) || bounds.min <= sourceStart && sourceStart < bounds.max) return null;
+
+    let cardIndex;
+    let boundary;
+    let groupDelta;
+
+    if (bounds.min < sourceStart) {
+      cardIndex = bounds.min;
+      boundary = bounds.min;
+      groupDelta = card.span;
+    } else {
+      cardIndex = bounds.max - card.span;
+      boundary = bounds.max;
+      groupDelta = -card.span;
+    }
+
+    const movePlan = {
+      groups: new Map([[group.id, groupDelta]]),
+      singles: new Map([[card.id, cardIndex]])
+    };
+    if (!validateGroupMovePlan(movePlan)) return null;
+    return { movePlan, cardIndex, boundary };
+  }
+
   function bottomStartCards() {
     return Array.from(state.cards.values())
       .filter((card) => card.location.type === "slot" && card.location.row === "bottom")
@@ -946,14 +978,26 @@
       location: { type: "slot", row: "bottom", index }
     })).filter(({ card }) => Boolean(card));
 
-    moves.forEach(({ card }) => clearCardLocation(card));
+    moves.filter(({ card }) => Boolean(card)).forEach(({ card }) => clearCardLocation(card));
     moves.forEach(({ card, location }) => {
+      if (!card) return;
       occupyCells(card.id, location.row, location.index, card.span);
       card.location = location;
       getSlotElement(location.row, location.index).appendChild(card.element);
       renderCardFace(card);
     });
     sortPoolCards();
+  }
+
+  function normalizeMovePlan(plan) {
+    if (plan?.groups && plan?.singles) return plan;
+    return { groups: plan || new Map(), singles: new Map() };
+  }
+
+  function isPlannedOccupant(occupant, plan) {
+    if (!occupant) return false;
+    if (occupant.groupId) return plan.groups.has(occupant.groupId);
+    return plan.singles.has(occupant.id);
   }
 
   function distanceToSlotBoundary(row, boundary, x, y) {
@@ -975,29 +1019,35 @@
 
   function groupInsertionHint(group, delta) {
     if (delta === 0) return null;
-    const blockerIds = new Set();
+    const blockers = [];
 
     groupTargetCells(group, delta).forEach((cell) => {
       const occupantId = state.slots.get(slotKey(cell.row, cell.index));
       if (!occupantId || group.cardIds.includes(occupantId)) return;
       const occupant = state.cards.get(occupantId);
-      if (occupant?.groupId) blockerIds.add(occupant.groupId);
+      if (occupant?.groupId) {
+        const blockingGroup = state.groups.get(occupant.groupId);
+        if (blockingGroup) blockers.push({ bounds: groupGlobalBounds(blockingGroup) });
+      } else if (cell.row === "bottom" && occupant?.location.type === "slot") {
+        const offset = bottomOffset();
+        blockers.push({
+          bounds: {
+            min: occupant.location.index + offset,
+            max: occupant.location.index + offset + occupant.span
+          }
+        });
+      }
     });
 
-    const blockers = [...blockerIds]
-      .map((groupId) => state.groups.get(groupId))
-      .filter(Boolean)
-      .map((blockingGroup) => ({ group: blockingGroup, bounds: groupGlobalBounds(blockingGroup) }))
-      .filter((item) => Number.isFinite(item.bounds.min));
-
-    if (!blockers.length) return null;
+    const validBlockers = blockers.filter((item) => Number.isFinite(item.bounds.min));
+    if (!validBlockers.length) return null;
     if (delta < 0) {
-      blockers.sort((a, b) => a.bounds.min - b.bounds.min);
-      return { boundary: blockers[0].bounds.min };
+      validBlockers.sort((a, b) => a.bounds.min - b.bounds.min);
+      return { boundary: validBlockers[0].bounds.min };
     }
 
-    blockers.sort((a, b) => b.bounds.max - a.bounds.max);
-    return { boundary: blockers[0].bounds.max };
+    validBlockers.sort((a, b) => b.bounds.max - a.bounds.max);
+    return { boundary: validBlockers[0].bounds.max };
   }
 
   function showInsertionIndicator(insertion) {
@@ -1041,6 +1091,11 @@
   function placeSingleCard(cardId, target) {
     const card = state.cards.get(cardId);
     if (!card || target.type !== "slot") return false;
+    if (target.movePlan) {
+      applyGroupMovePlan(target.movePlan);
+      afterBoardChange();
+      return true;
+    }
     if (target.singlePlan) {
       applySingleBottomPlan(target.singlePlan);
       afterBoardChange();
@@ -1083,47 +1138,62 @@
     if (delta === 0) return null;
 
     const pushDelta = -Math.sign(delta) * groupSpan(group);
-    const plan = new Map([[group.id, delta]]);
+    const plan = {
+      groups: new Map([[group.id, delta]]),
+      singles: new Map()
+    };
     let changed = true;
 
     while (changed) {
       changed = false;
-      for (const [groupId, plannedDelta] of Array.from(plan.entries())) {
+      for (const [groupId, plannedDelta] of Array.from(plan.groups.entries())) {
         const plannedGroup = state.groups.get(groupId);
         if (!plannedGroup) return null;
-        const blockers = getGroupMoveBlockers(plannedGroup, plannedDelta, plan);
+        const blockers = getGroupMoveBlockers(plannedGroup, plannedDelta, plan, pushDelta);
         if (blockers === null) return null;
-        for (const blockerId of blockers) {
-          if (!plan.has(blockerId)) {
-            plan.set(blockerId, pushDelta);
+        for (const blockerId of blockers.groups) {
+          if (!plan.groups.has(blockerId)) {
+            plan.groups.set(blockerId, pushDelta);
             changed = true;
           }
         }
+        blockers.singles.forEach((targetIndex, cardId) => {
+          if (!plan.singles.has(cardId)) plan.singles.set(cardId, targetIndex);
+        });
       }
     }
 
     return validateGroupMovePlan(plan) ? plan : null;
   }
 
-  function getGroupMoveBlockers(group, delta, plan) {
-    const blockers = new Set();
+  function getGroupMoveBlockers(group, delta, plan, pushDelta) {
+    const blockers = {
+      groups: new Set(),
+      singles: new Map()
+    };
 
     for (const cell of groupTargetCells(group, delta)) {
       if (!isCellInBounds(cell.row, cell.index)) return null;
       const occupantId = state.slots.get(slotKey(cell.row, cell.index));
       if (!occupantId || group.cardIds.includes(occupantId)) continue;
       const occupant = state.cards.get(occupantId);
-      if (!occupant?.groupId) return null;
-      if (!plan.has(occupant.groupId)) blockers.add(occupant.groupId);
+      if (occupant?.groupId) {
+        if (!plan.groups.has(occupant.groupId)) blockers.groups.add(occupant.groupId);
+      } else if (cell.row === "bottom" && occupant.location.type === "slot") {
+        if (!plan.singles.has(occupant.id)) blockers.singles.set(occupant.id, occupant.location.index + pushDelta);
+      } else {
+        return null;
+      }
     }
 
     return blockers;
   }
 
   function validateGroupMovePlan(plan) {
+    const normalizedPlan = normalizeMovePlan(plan);
     const targetCells = new Map();
 
-    for (const [groupId, delta] of plan.entries()) {
+    for (const [groupId, delta] of normalizedPlan.groups.entries()) {
       const group = state.groups.get(groupId);
       if (!group) return false;
       for (const cell of groupTargetCells(group, delta)) {
@@ -1136,7 +1206,24 @@
         const occupantId = state.slots.get(key);
         if (!occupantId) continue;
         const occupant = state.cards.get(occupantId);
-        if (!occupant?.groupId || !plan.has(occupant.groupId)) return false;
+        if (!isPlannedOccupant(occupant, normalizedPlan)) return false;
+      }
+    }
+
+    for (const [cardId, index] of normalizedPlan.singles.entries()) {
+      const card = state.cards.get(cardId);
+      if (!card || card.groupId) return false;
+      for (const coveredIndex of getCoveredIndices("bottom", index, card.span)) {
+        if (!isCellInBounds("bottom", coveredIndex)) return false;
+        const key = slotKey("bottom", coveredIndex);
+        const existing = targetCells.get(key);
+        if (existing && existing !== cardId) return false;
+        targetCells.set(key, cardId);
+
+        const occupantId = state.slots.get(key);
+        if (!occupantId) continue;
+        const occupant = state.cards.get(occupantId);
+        if (!isPlannedOccupant(occupant, normalizedPlan)) return false;
       }
     }
 
@@ -1144,8 +1231,9 @@
   }
 
   function applyGroupMovePlan(plan) {
+    const normalizedPlan = normalizeMovePlan(plan);
     const moves = [];
-    for (const [groupId, delta] of plan.entries()) {
+    for (const [groupId, delta] of normalizedPlan.groups.entries()) {
       const group = state.groups.get(groupId);
       group.cardIds.forEach((id) => {
         const card = state.cards.get(id);
@@ -1157,6 +1245,13 @@
             index: card.location.index + delta
           }
         });
+      });
+    }
+    for (const [cardId, index] of normalizedPlan.singles.entries()) {
+      const card = state.cards.get(cardId);
+      moves.push({
+        card,
+        location: { type: "slot", row: "bottom", index }
       });
     }
 
@@ -1207,6 +1302,18 @@
       const offset = card.location.row === "bottom" ? bottomOffset() : 0;
       min = Math.min(min, card.location.index + offset);
       max = Math.max(max, card.location.index + offset + card.span);
+    });
+    return { min, max };
+  }
+
+  function groupBottomBounds(group) {
+    let min = Infinity;
+    let max = -Infinity;
+    group.cardIds.forEach((id) => {
+      const card = state.cards.get(id);
+      if (!card || card.location.type !== "slot" || card.location.row !== "bottom") return;
+      min = Math.min(min, card.location.index);
+      max = Math.max(max, card.location.index + card.span);
     });
     return { min, max };
   }
