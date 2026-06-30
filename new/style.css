@@ -140,8 +140,8 @@ h1 {
 }
 
 .top-row {
-  grid-template-columns: repeat(6, var(--slot-size));
-  width: calc(var(--slot-size) * 6 + var(--slot-gap) * 5);
+  grid-template-columns: repeat(var(--top-digits, 6), var(--slot-size));
+  width: max-content;
 }
 
 .bottom-row {
@@ -151,8 +151,8 @@ h1 {
 }
 
 .bottom-slots {
-  grid-template-columns: repeat(5, var(--slot-size));
-  width: calc(var(--slot-size) * 5 + var(--slot-gap) * 4);
+  grid-template-columns: repeat(var(--bottom-digits, 5), var(--slot-size));
+  width: max-content;
 }
 
 .equals,
@@ -274,16 +274,12 @@ h1 {
   cursor: grabbing;
 }
 
-.card.drag-source {
-  opacity: 0.38;
-}
-
-.drag-ghost {
+.card.dragging-card {
   position: fixed;
   z-index: 20;
   pointer-events: none;
-  transform: translate(-50%, -50%);
-  opacity: 0.92;
+  opacity: 1;
+  box-shadow: 0 12px 26px rgba(36, 48, 82, 0.2);
 }
 
 .card.factor {

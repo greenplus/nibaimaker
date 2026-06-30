@@ -1,9 +1,6 @@
 (function () {
   "use strict";
 
-  const TOP_DIGITS = 6;
-  const BOTTOM_DIGITS = 5;
-  const BOTTOM_OFFSET = TOP_DIGITS - BOTTOM_DIGITS;
   const QUIZ_COUNT = 10;
   const SMALL_DIVISORS = [2, 3, 5, 7, 11, 13];
   const CARD_SYMBOLS = ["T", "J", "Q", "K"];
@@ -41,6 +38,8 @@
     startTime: 0,
     timerId: 0,
     cardSeq: 0,
+    topDigits: 0,
+    bottomDigits: 0,
     cards: new Map(),
     slots: new Map(),
     groups: new Map(),
@@ -50,6 +49,7 @@
   };
 
   const els = {
+    equation: document.getElementById("equation"),
     topRow: document.getElementById("top-row"),
     bottomRow: document.getElementById("bottom-row"),
     pool: document.getElementById("pool"),
@@ -157,13 +157,17 @@
         doubleCards.forEach((double) => {
           if (cardsToNum(factor) !== String(prime)) return;
           if (cardsToNum(double) !== String(prime * 2)) return;
-          if (sequenceDigitWidth(factor) !== BOTTOM_DIGITS) return;
-          if (sequenceDigitWidth(double) > TOP_DIGITS) return;
+          if (sequenceDigitWidth(factor) !== String(prime).length) return;
+          if (sequenceDigitWidth(double) !== String(prime * 2).length) return;
 
           const factorDetail = cardsToDetails(factor);
           const doubleDetail = cardsToDetails(double);
           const quiz = factorDetail.map((count, i) => count + doubleDetail[i]);
-          quizzes.push(quiz);
+          quizzes.push({
+            details: quiz,
+            bottomDigits: String(prime).length,
+            topDigits: String(prime * 2).length
+          });
         });
       });
     });
@@ -179,18 +183,23 @@
     const quizList = [];
 
     rawQuizzes.forEach((rawQuiz) => {
-      const quiz = rawQuiz.slice();
+      const quiz = rawQuiz.details.slice();
       if (quiz[0] !== 0) return;
       quiz[2] += 1;
       if (!quiz.every((value) => value <= 4)) return;
 
       const cards = removeFixedTwo(detailsToCards(quiz));
-      if (sequenceDigitWidth(cards) < BOTTOM_DIGITS) return;
+      if (sequenceDigitWidth(cards) !== rawQuiz.topDigits + rawQuiz.bottomDigits) return;
 
-      const key = JSON.stringify(quiz);
+      const key = JSON.stringify([quiz, rawQuiz.topDigits, rawQuiz.bottomDigits]);
       if (unique.has(key)) return;
       unique.add(key);
-      quizList.push({ details: quiz, cards });
+      quizList.push({
+        details: quiz,
+        cards,
+        topDigits: rawQuiz.topDigits,
+        bottomDigits: rawQuiz.bottomDigits
+      });
     });
 
     return getRandomSubarray(quizList, QUIZ_COUNT);
@@ -217,7 +226,7 @@
     numToCards(0, String(factorNum * 2), "", doubleCandidates);
 
     for (const doubleCards of doubleCandidates) {
-      if (sequenceDigitWidth(doubleCards) > TOP_DIGITS) continue;
+      if (sequenceDigitWidth(doubleCards) !== quiz.topDigits) continue;
       const doubleDetail = cardsToDetails(doubleCards);
       const allDetail = factorDetail.map((detail, i) => detail + doubleDetail[i]);
       allDetail[2] += 1;
@@ -272,16 +281,18 @@
     return value.replace(/[TJQK]/g, (symbol) => SYMBOL_TO_DIGITS[symbol]);
   }
 
-  function initSlots() {
+  function initSlots(topDigits, bottomDigits) {
     els.topRow.innerHTML = "";
     els.bottomRow.innerHTML = "";
     state.slots.clear();
+    els.equation.style.setProperty("--top-digits", String(topDigits));
+    els.equation.style.setProperty("--bottom-digits", String(bottomDigits));
 
-    for (let i = 0; i < TOP_DIGITS; i += 1) {
+    for (let i = 0; i < topDigits; i += 1) {
       els.topRow.appendChild(makeSlot("top", i));
     }
 
-    for (let i = 0; i < BOTTOM_DIGITS; i += 1) {
+    for (let i = 0; i < bottomDigits; i += 1) {
       els.bottomRow.appendChild(makeSlot("bottom", i));
     }
   }
@@ -292,7 +303,7 @@
     slot.className = "slot";
     slot.dataset.row = row;
     slot.dataset.index = String(index);
-    slot.dataset.col = String(row === "top" ? TOP_DIGITS - index : BOTTOM_DIGITS - index);
+    slot.dataset.col = String(row === "top" ? state.topDigits - index : state.bottomDigits - index);
     state.slots.set(key, null);
     return slot;
   }
@@ -329,6 +340,9 @@
 
   function renderQuiz() {
     const quiz = state.quizList[state.currentQuiz];
+    state.topDigits = quiz.topDigits;
+    state.bottomDigits = quiz.bottomDigits;
+    initSlots(state.topDigits, state.bottomDigits);
     state.cards.clear();
     state.groups.clear();
     state.cardSeq = 0;
@@ -380,8 +394,7 @@
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      active: false,
-      ghost: null
+      active: false
     };
     card.element.setPointerCapture?.(event.pointerId);
     window.addEventListener("pointermove", onPointerMove, { passive: false });
@@ -399,23 +412,22 @@
     if (!drag.active && Math.hypot(dx, dy) < 8) return;
 
     event.preventDefault();
-    if (!drag.active) startPointerDrag(drag);
+    if (!drag.active) startPointerDrag(drag, event);
 
-    drag.ghost.style.left = `${event.clientX}px`;
-    drag.ghost.style.top = `${event.clientY}px`;
+    moveDraggingCard(drag, event.clientX, event.clientY);
     highlightNearestDrop(drag.cardId, event.clientX, event.clientY);
   }
 
   function onPointerUp(event) {
     const drag = state.pointerDrag;
     if (!drag || !drag.active) {
-      cleanupDrag();
+      cleanupDrag({ restore: true });
       return;
     }
 
     const cardId = drag.cardId;
     const target = findNearestDrop(cardId, event.clientX, event.clientY);
-    cleanupDrag();
+    cleanupDrag({ restore: !target });
     state.suppressClickUntil = Date.now() + 250;
 
     if (!target) return;
@@ -427,30 +439,52 @@
   }
 
   function onPointerCancel() {
-    cleanupDrag();
+    cleanupDrag({ restore: true });
   }
 
-  function startPointerDrag(drag) {
+  function startPointerDrag(drag, event) {
     const card = state.cards.get(drag.cardId);
+    const rect = card.element.getBoundingClientRect();
+    drag.offsetX = event.clientX - rect.left;
+    drag.offsetY = event.clientY - rect.top;
     drag.active = true;
-    drag.ghost = card.element.cloneNode(true);
-    drag.ghost.classList.add("drag-ghost");
-    drag.ghost.draggable = false;
-    drag.ghost.removeAttribute("id");
-    document.body.appendChild(drag.ghost);
-    card.element.classList.add("drag-source");
+    card.element.style.width = `${rect.width}px`;
+    card.element.style.height = `${rect.height}px`;
+    card.element.classList.add("dragging-card");
+    document.body.appendChild(card.element);
+    moveDraggingCard(drag, event.clientX, event.clientY);
   }
 
-  function cleanupDrag() {
+  function moveDraggingCard(drag, x, y) {
+    const card = state.cards.get(drag.cardId);
+    card.element.style.left = `${x - drag.offsetX}px`;
+    card.element.style.top = `${y - drag.offsetY}px`;
+  }
+
+  function cleanupDrag({ restore = false } = {}) {
     window.removeEventListener("pointermove", onPointerMove);
     const drag = state.pointerDrag;
     if (drag) {
       const card = state.cards.get(drag.cardId);
-      card?.element.classList.remove("drag-source");
-      drag.ghost?.remove();
+      if (card) {
+        card.element.classList.remove("dragging-card");
+        card.element.style.left = "";
+        card.element.style.top = "";
+        card.element.style.width = "";
+        card.element.style.height = "";
+        if (restore) restoreCardDom(card);
+      }
     }
     state.pointerDrag = null;
     document.querySelectorAll(".drag-over").forEach((el) => el.classList.remove("drag-over"));
+  }
+
+  function restoreCardDom(card) {
+    if (card.location.type === "pool") {
+      els.pool.appendChild(card.element);
+      return;
+    }
+    getSlotElement(card.location.row, card.location.index)?.appendChild(card.element);
   }
 
   function highlightNearestDrop(cardId, x, y) {
@@ -483,7 +517,7 @@
   function findNearestSingleTarget(card, x, y) {
     const candidates = [];
     ["top", "bottom"].forEach((row) => {
-      const limit = row === "top" ? TOP_DIGITS : BOTTOM_DIGITS;
+      const limit = row === "top" ? state.topDigits : state.bottomDigits;
       for (let index = 0; index <= limit - card.span; index += 1) {
         if (!canPlaceCells(card.id, row, index, card.span)) continue;
         candidates.push({
@@ -503,7 +537,7 @@
     const group = state.groups.get(card.groupId);
     if (!group) return null;
     const row = card.location.row;
-    const limit = row === "top" ? TOP_DIGITS : BOTTOM_DIGITS;
+    const limit = row === "top" ? state.topDigits : state.bottomDigits;
     const candidates = [];
 
     for (let index = 0; index <= limit - card.span; index += 1) {
@@ -640,7 +674,7 @@
   }
 
   function canPlaceCells(cardId, row, index, span, allowedOccupants = [cardId]) {
-    const limit = row === "top" ? TOP_DIGITS : BOTTOM_DIGITS;
+    const limit = row === "top" ? state.topDigits : state.bottomDigits;
     if (index < 0 || index + span > limit) return false;
     return getCoveredIndices(row, index, span).every((coveredIndex) => {
       const occupant = state.slots.get(slotKey(row, coveredIndex));
@@ -667,7 +701,7 @@
   function getBottomAnswer() {
     let answer = "";
     let index = 0;
-    while (index < BOTTOM_DIGITS) {
+    while (index < state.bottomDigits) {
       const cardId = state.slots.get(slotKey("bottom", index));
       if (!cardId) return "";
       const card = state.cards.get(cardId);
@@ -675,7 +709,7 @@
       answer += card.label;
       index += card.span;
     }
-    return cardsToNum(answer).length === BOTTOM_DIGITS ? answer : "";
+    return cardsToNum(answer).length === state.bottomDigits ? answer : "";
   }
 
   function judge(answer) {
@@ -743,7 +777,7 @@
     const matches = [];
 
     FACTOR_PAIRS.forEach((pattern) => {
-      for (let start = 0; start <= TOP_DIGITS - pattern.width; start += 1) {
+      for (let start = 0; start <= state.topDigits - pattern.width; start += 1) {
         const match = matchPattern(pattern, start);
         if (match) matches.push(match);
       }
@@ -775,7 +809,7 @@
     }
 
     for (const token of pattern.bottom) {
-      if (!matchToken("bottom", topStart + token.start - BOTTOM_OFFSET, token, cardIds)) return null;
+      if (!matchToken("bottom", topStart + token.start - bottomOffset(), token, cardIds)) return null;
     }
 
     return {
@@ -787,7 +821,7 @@
   }
 
   function matchToken(row, index, token, cardIds) {
-    const limit = row === "top" ? TOP_DIGITS : BOTTOM_DIGITS;
+    const limit = row === "top" ? state.topDigits : state.bottomDigits;
     if (index < 0 || index + token.span > limit) return false;
     const cardId = state.slots.get(slotKey(row, index));
     if (!cardId) return false;
@@ -799,7 +833,7 @@
   }
 
   function findFirstBottomFit(card) {
-    for (let i = 0; i <= BOTTOM_DIGITS - card.span; i += 1) {
+    for (let i = 0; i <= state.bottomDigits - card.span; i += 1) {
       if (canPlaceCells(card.id, "bottom", i, card.span)) return i;
     }
     return -1;
@@ -807,6 +841,10 @@
 
   function slotKey(row, index) {
     return `${row}:${index}`;
+  }
+
+  function bottomOffset() {
+    return state.topDigits - state.bottomDigits;
   }
 
   function getSlotElement(row, index) {
@@ -831,7 +869,6 @@
   }
 
   function init() {
-    initSlots();
     state.quizList = buildQuizList();
     els.reset.addEventListener("click", resetBoard);
     renderQuiz();
