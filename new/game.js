@@ -59,7 +59,8 @@
     history: document.getElementById("history-list"),
     flash: document.getElementById("judge-flash"),
     reset: document.getElementById("reset-board"),
-    tweet: document.getElementById("tweet-link")
+    tweet: document.getElementById("tweet-link"),
+    factorLayer: null
   };
 
   function generatePrimes(limit) {
@@ -155,19 +156,12 @@
 
       factorCards.forEach((factor) => {
         doubleCards.forEach((double) => {
-          if (cardsToNum(factor) !== String(prime)) return;
-          if (cardsToNum(double) !== String(prime * 2)) return;
-          if (sequenceDigitWidth(factor) !== String(prime).length) return;
-          if (sequenceDigitWidth(double) !== String(prime * 2).length) return;
+          if (factor.length !== 5 || double.length !== 5) return;
 
           const factorDetail = cardsToDetails(factor);
           const doubleDetail = cardsToDetails(double);
           const quiz = factorDetail.map((count, i) => count + doubleDetail[i]);
-          quizzes.push({
-            details: quiz,
-            bottomDigits: String(prime).length,
-            topDigits: String(prime * 2).length
-          });
+          quizzes.push(quiz);
         });
       });
     });
@@ -176,29 +170,31 @@
   }
 
   function buildQuizList() {
-    const primeList = generatePrimes(99999);
+    const primeList = generatePrimes(1000000);
     const goodsizePrimeList = primeList.filter((prime) => prime >= 10000);
     const rawQuizzes = generateQuizzes(goodsizePrimeList);
     const unique = new Set();
     const quizList = [];
 
     rawQuizzes.forEach((rawQuiz) => {
-      const quiz = rawQuiz.details.slice();
+      const quiz = rawQuiz.slice();
       if (quiz[0] !== 0) return;
       quiz[2] += 1;
       if (!quiz.every((value) => value <= 4)) return;
 
-      const cards = removeFixedTwo(detailsToCards(quiz));
-      if (sequenceDigitWidth(cards) !== rawQuiz.topDigits + rawQuiz.bottomDigits) return;
+      const fullCards = detailsToCards(quiz);
+      const cards = removeFixedTwo(fullCards);
+      if (cards.length !== 10) return;
+      const totalDigits = sequenceDigitWidth(cards);
 
-      const key = JSON.stringify([quiz, rawQuiz.topDigits, rawQuiz.bottomDigits]);
+      const key = JSON.stringify(quiz);
       if (unique.has(key)) return;
       unique.add(key);
       quizList.push({
         details: quiz,
         cards,
-        topDigits: rawQuiz.topDigits,
-        bottomDigits: rawQuiz.bottomDigits
+        topDigits: Math.ceil(totalDigits / 2),
+        bottomDigits: Math.floor(totalDigits / 2)
       });
     });
 
@@ -287,6 +283,8 @@
     state.slots.clear();
     els.equation.style.setProperty("--top-digits", String(topDigits));
     els.equation.style.setProperty("--bottom-digits", String(bottomDigits));
+    ensureFactorLayer();
+    els.factorLayer.innerHTML = "";
 
     for (let i = 0; i < topDigits; i += 1) {
       els.topRow.appendChild(makeSlot("top", i));
@@ -306,6 +304,13 @@
     slot.dataset.col = String(row === "top" ? state.topDigits - index : state.bottomDigits - index);
     state.slots.set(key, null);
     return slot;
+  }
+
+  function ensureFactorLayer() {
+    if (els.factorLayer) return;
+    els.factorLayer = document.createElement("div");
+    els.factorLayer.className = "factor-layer";
+    els.equation.appendChild(els.factorLayer);
   }
 
   function makeCard(label) {
@@ -360,7 +365,7 @@
     });
 
     els.progress.textContent = `${state.currentQuiz + 1} / ${state.quizList.length}`;
-    els.feedback.textContent = "下段5桁が埋まると自動で判定します。カードをタップすると左の空き枠へ入ります。";
+    els.feedback.textContent = `下段${state.bottomDigits}桁が埋まると自動で判定します。カードをタップすると左の空き枠へ入ります。`;
     detectFactors();
   }
 
@@ -542,7 +547,7 @@
 
     for (let index = 0; index <= limit - card.span; index += 1) {
       const delta = index - card.location.index;
-      if (!canMoveGroup(group, delta)) continue;
+      if (!planGroupMove(group, delta)) continue;
       candidates.push({
         type: "slot",
         row,
@@ -608,35 +613,133 @@
 
     if (card.location.type !== "slot") return;
     const delta = target.index - card.location.index;
-    if (!canMoveGroup(group, delta)) return;
+    const plan = planGroupMove(group, delta);
+    if (!plan) return;
 
-    const nextLocations = group.cardIds.map((id) => {
-      const member = state.cards.get(id);
-      return {
-        id,
-        row: member.location.row,
-        index: member.location.index + delta
-      };
-    });
-
-    group.cardIds.forEach((id) => clearCardLocation(state.cards.get(id)));
-    nextLocations.forEach((loc) => {
-      const member = state.cards.get(loc.id);
-      const location = { type: "slot", row: loc.row, index: loc.index };
-      occupyCells(loc.id, location.row, location.index, member.span);
-      member.location = location;
-      getSlotElement(location.row, location.index).appendChild(member.element);
-    });
-
+    applyGroupMovePlan(plan);
     afterBoardChange();
   }
 
-  function canMoveGroup(group, delta) {
-    return group.cardIds.every((id) => {
-      const member = state.cards.get(id);
-      if (!member || member.location.type !== "slot") return false;
-      return canPlaceCells(id, member.location.row, member.location.index + delta, member.span, group.cardIds);
+  function planGroupMove(group, delta) {
+    if (delta === 0) return null;
+
+    const pushDelta = -Math.sign(delta) * groupSpan(group);
+    const plan = new Map([[group.id, delta]]);
+    let changed = true;
+
+    while (changed) {
+      changed = false;
+      for (const [groupId, plannedDelta] of Array.from(plan.entries())) {
+        const plannedGroup = state.groups.get(groupId);
+        if (!plannedGroup) return null;
+        const blockers = getGroupMoveBlockers(plannedGroup, plannedDelta, plan);
+        if (blockers === null) return null;
+        for (const blockerId of blockers) {
+          if (!plan.has(blockerId)) {
+            plan.set(blockerId, pushDelta);
+            changed = true;
+          }
+        }
+      }
+    }
+
+    return validateGroupMovePlan(plan) ? plan : null;
+  }
+
+  function getGroupMoveBlockers(group, delta, plan) {
+    const blockers = new Set();
+
+    for (const cell of groupTargetCells(group, delta)) {
+      if (!isCellInBounds(cell.row, cell.index)) return null;
+      const occupantId = state.slots.get(slotKey(cell.row, cell.index));
+      if (!occupantId || group.cardIds.includes(occupantId)) continue;
+      const occupant = state.cards.get(occupantId);
+      if (!occupant?.groupId) return null;
+      if (!plan.has(occupant.groupId)) blockers.add(occupant.groupId);
+    }
+
+    return blockers;
+  }
+
+  function validateGroupMovePlan(plan) {
+    const targetCells = new Map();
+
+    for (const [groupId, delta] of plan.entries()) {
+      const group = state.groups.get(groupId);
+      if (!group) return false;
+      for (const cell of groupTargetCells(group, delta)) {
+        if (!isCellInBounds(cell.row, cell.index)) return false;
+        const key = slotKey(cell.row, cell.index);
+        const existing = targetCells.get(key);
+        if (existing && existing !== groupId) return false;
+        targetCells.set(key, groupId);
+
+        const occupantId = state.slots.get(key);
+        if (!occupantId) continue;
+        const occupant = state.cards.get(occupantId);
+        if (!occupant?.groupId || !plan.has(occupant.groupId)) return false;
+      }
+    }
+
+    return true;
+  }
+
+  function applyGroupMovePlan(plan) {
+    const moves = [];
+    for (const [groupId, delta] of plan.entries()) {
+      const group = state.groups.get(groupId);
+      group.cardIds.forEach((id) => {
+        const card = state.cards.get(id);
+        moves.push({
+          card,
+          location: {
+            type: "slot",
+            row: card.location.row,
+            index: card.location.index + delta
+          }
+        });
+      });
+    }
+
+    moves.forEach(({ card }) => clearCardLocation(card));
+    moves.forEach(({ card, location }) => {
+      occupyCells(card.id, location.row, location.index, card.span);
+      card.location = location;
+      getSlotElement(location.row, location.index).appendChild(card.element);
     });
+  }
+
+  function groupTargetCells(group, delta) {
+    return group.cardIds.flatMap((id) => {
+      const card = state.cards.get(id);
+      if (!card || card.location.type !== "slot") return [];
+      return getCoveredIndices(card.location.row, card.location.index + delta, card.span).map((index) => ({
+        row: card.location.row,
+        index
+      }));
+    });
+  }
+
+  function groupSpan(group) {
+    const bounds = groupBounds(group);
+    return Math.max(1, bounds.max - bounds.min);
+  }
+
+  function groupBounds(group) {
+    let min = Infinity;
+    let max = -Infinity;
+    group.cardIds.forEach((id) => {
+      const card = state.cards.get(id);
+      if (!card || card.location.type !== "slot") return;
+      min = Math.min(min, card.location.index);
+      max = Math.max(max, card.location.index + card.span);
+    });
+    return { min, max };
+  }
+
+  function isCellInBounds(row, index) {
+    const limit = row === "top" ? state.topDigits : state.bottomDigits;
+    return index >= 0 && index < limit;
   }
 
   function returnToPool(cardId) {
@@ -768,9 +871,11 @@
 
   function detectFactors() {
     state.groups.clear();
+    ensureFactorLayer();
+    els.factorLayer.innerHTML = "";
     state.cards.forEach((card) => {
       card.groupId = null;
-      card.element.classList.remove("factor", "in-group", "bump-left", "notch-right");
+      card.element.classList.remove("factor", "in-group");
     });
 
     const usedCards = new Set();
@@ -783,22 +888,25 @@
       }
     });
 
+    const acceptedMatches = [];
+
     matches
       .sort((a, b) => b.width - a.width)
       .forEach((match, index) => {
         if (match.cardIds.length < 2) return;
         if (match.cardIds.some((id) => usedCards.has(id))) return;
         const groupId = `group-${index}`;
-        state.groups.set(groupId, { id: groupId, cardIds: match.cardIds });
+        state.groups.set(groupId, { id: groupId, cardIds: match.cardIds, match });
+        acceptedMatches.push({ ...match, groupId });
         match.cardIds.forEach((id) => {
           usedCards.add(id);
           const card = state.cards.get(id);
           card.groupId = groupId;
           card.element.classList.add("factor", "in-group");
-          if (match.carryIn) card.element.classList.add("notch-right");
-          if (match.carryOut) card.element.classList.add("bump-left");
         });
       });
+
+    renderFactorOutlines(acceptedMatches);
   }
 
   function matchPattern(pattern, topStart) {
@@ -815,9 +923,57 @@
     return {
       width: pattern.width,
       cardIds: [...new Set(cardIds)],
+      topRun: tokenRun(pattern.top, topStart),
+      bottomRun: tokenRun(pattern.bottom, topStart - bottomOffset()),
       carryIn: pattern.carryIn,
       carryOut: pattern.carryOut
     };
+  }
+
+  function tokenRun(tokens, base) {
+    const start = Math.min(...tokens.map((token) => token.start));
+    const end = Math.max(...tokens.map((token) => token.start + token.span));
+    return { start: base + start, end: base + end };
+  }
+
+  function renderFactorOutlines(matches) {
+    ensureFactorLayer();
+    els.factorLayer.innerHTML = "";
+    matches.forEach((match) => {
+      renderRowOutline(match, "top", match.topRun);
+      renderRowOutline(match, "bottom", match.bottomRun);
+    });
+  }
+
+  function renderRowOutline(match, row, run) {
+    if (!run || run.start < 0 || run.end <= run.start) return;
+    const first = getSlotElement(row, run.start);
+    const last = getSlotElement(row, run.end - 1);
+    if (!first || !last) return;
+
+    const root = els.equation.getBoundingClientRect();
+    const firstRect = first.getBoundingClientRect();
+    const lastRect = last.getBoundingClientRect();
+    const outline = document.createElement("div");
+    outline.className = "factor-outline";
+    if (match.carryIn) outline.classList.add("carry-in");
+    if (match.carryOut) outline.classList.add("carry-out");
+    outline.style.left = `${firstRect.left - root.left - 5}px`;
+    outline.style.top = `${firstRect.top - root.top - 5}px`;
+    outline.style.width = `${lastRect.right - firstRect.left + 10}px`;
+    outline.style.height = `${firstRect.height + 10}px`;
+
+    for (let index = run.start + 1; index < run.end; index += 1) {
+      const dividerSlot = getSlotElement(row, index);
+      if (!dividerSlot) continue;
+      const dividerRect = dividerSlot.getBoundingClientRect();
+      const divider = document.createElement("span");
+      divider.className = "factor-divider";
+      divider.style.left = `${dividerRect.left - firstRect.left + 5}px`;
+      outline.appendChild(divider);
+    }
+
+    els.factorLayer.appendChild(outline);
   }
 
   function matchToken(row, index, token, cardIds) {

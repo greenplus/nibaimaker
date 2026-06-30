@@ -125,6 +125,53 @@ h1 {
   padding: 2px 0;
 }
 
+.factor-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.factor-outline {
+  position: absolute;
+  border: 3px solid var(--factor);
+  border-radius: 6px;
+  background: rgba(244, 255, 246, 0.28);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.76);
+}
+
+.factor-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgba(74, 154, 104, 0.58);
+}
+
+.factor-outline.carry-out::before,
+.factor-outline.carry-in::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform: translateY(-50%);
+}
+
+.factor-outline.carry-out::before {
+  left: -15px;
+  border-top: 11px solid transparent;
+  border-bottom: 11px solid transparent;
+  border-right: 15px solid var(--factor);
+}
+
+.factor-outline.carry-in::after {
+  right: -15px;
+  border-top: 11px solid transparent;
+  border-bottom: 11px solid transparent;
+  border-left: 15px solid var(--factor);
+}
+
 .row,
 .bottom-slots {
   display: grid;
@@ -283,36 +330,11 @@ h1 {
 }
 
 .card.factor {
-  border-color: var(--factor);
   background: #f4fff6;
 }
 
-.card.factor::before,
-.card.factor::after {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 14px;
-  height: 22px;
-  border-radius: 999px;
-  background: #d9f0df;
-  border: 2px solid var(--factor);
-}
-
-.card.bump-left::before {
-  content: "";
-  left: -11px;
-}
-
-.card.notch-right::after {
-  content: "";
-  right: -7px;
-  background: var(--slot);
-  border-color: var(--factor);
-}
-
 .card.in-group {
-  box-shadow: inset 0 0 0 2px rgba(74, 154, 104, 0.18);
+  box-shadow: inset 0 0 0 2px rgba(74, 154, 104, 0.1);
 }
 
 .result-strip {
