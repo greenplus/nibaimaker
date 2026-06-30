@@ -11,11 +11,25 @@
     <header class="topbar">
       <div>
         <h1>にばいめーかー</h1>
-        <p class="subtitle">カードを下段へ並べて、2倍になる因子を見つける。</p>
+        <p class="subtitle">カードを使ってq=2×p（pは素数に近い）の等式を作るゲーム。</p>
+        <details class="help-panel">
+          <summary>機能説明</summary>
+          <ul>
+            <li>基本: カードを上段qと下段pに並べ、q=2×pを作ります。下段が埋まるたびに自動判定します。</li>
+            <li>タップ配置: カードをタップすると、設定に応じて下段の左端または右端の空き枠へ入ります。</li>
+            <li>ドラッグ: カードは盤面へドラッグできます。T/J/Q/Kは10/11/12/13として2桁ぶんの幅を持ちます。</li>
+            <li>因子: 上下の桁が2倍関係を作ると因子ボックスで囲まれ、まとまりとして動かせます。</li>
+            <li>繰り上がり: 下から繰り上がりを受ける因子と、上へ繰り上がる因子は、上段と下段の間の三角形で表示します。</li>
+            <li>仮想0: 上段だけ1桁多い場合は、下段左外側の空欄を0として扱える因子も表示します。この因子は戻すことだけできます。</li>
+            <li>挿入: 因子を別の因子の間へドラッグすると挿入線が出て、その位置へ入ります。</li>
+            <li>判定: 13以下の素数の倍数は黄色で続行、正解は緑で次問へ進みます。</li>
+            <li>表示設定: 因子候補ヒント、タップ方向、絵札/数字表示はスタート画面で切り替えられ、保存されます。</li>
+          </ul>
+        </details>
       </div>
       <div class="stats" aria-label="進行状況">
         <span id="progress">1 / 10</span>
-        <span id="timer">0.0s</span>
+        <span id="timer">0.00s</span>
       </div>
     </header>
 
@@ -25,7 +39,7 @@
         <div class="row bottom-row">
           <span class="equals">=</span>
           <span class="fixed-multiplier">2</span>
-          <span class="times">x</span>
+          <span class="times">×</span>
           <div class="bottom-slots" id="bottom-row" aria-label="下段"></div>
         </div>
       </div>

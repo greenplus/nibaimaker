@@ -60,6 +60,27 @@ h1 {
   font-size: 0.96rem;
 }
 
+.help-panel {
+  max-width: 680px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.help-panel summary {
+  width: max-content;
+  cursor: pointer;
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.help-panel ul {
+  display: grid;
+  gap: 5px;
+  margin: 8px 0 0;
+  padding-left: 1.2em;
+}
+
 .stats {
   display: flex;
   gap: 8px;
@@ -82,6 +103,7 @@ h1 {
 .playfield {
   position: relative;
   overflow: hidden;
+  scroll-behavior: smooth;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.78);
@@ -247,6 +269,11 @@ h1 {
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.76);
 }
 
+.factor-outline.carry-in.carry-out {
+  border-color: #5e9d82;
+  background: rgba(245, 255, 247, 0.36);
+}
+
 .factor-divider {
   position: absolute;
   top: 0;
@@ -269,14 +296,49 @@ h1 {
   left: -15px;
   border-top: 11px solid transparent;
   border-bottom: 11px solid transparent;
-  border-right: 15px solid var(--factor);
+  border-right: 15px solid rgba(24, 142, 174, 0.82);
+  filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 2px rgba(24, 82, 102, 0.22));
 }
 
 .factor-outline.carry-in::after {
   right: -2px;
   border-top: 11px solid transparent;
   border-bottom: 11px solid transparent;
-  border-right: 15px solid var(--factor);
+  border-right: 15px solid rgba(238, 158, 44, 0.78);
+  filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 2px rgba(120, 80, 10, 0.2));
+  mix-blend-mode: multiply;
+}
+
+.insert-indicator {
+  position: absolute;
+  z-index: 6;
+  width: 4px;
+  border-radius: 999px;
+  background: #3167d6;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.92), 0 0 0 6px rgba(49, 103, 214, 0.16);
+  pointer-events: none;
+}
+
+.insert-indicator::before,
+.insert-indicator::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  width: 0;
+  height: 0;
+  transform: translateX(-50%);
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+}
+
+.insert-indicator::before {
+  top: -8px;
+  border-bottom: 8px solid #3167d6;
+}
+
+.insert-indicator::after {
+  bottom: -8px;
+  border-top: 8px solid #3167d6;
 }
 
 .row,
@@ -306,7 +368,7 @@ h1 {
 }
 
 .bottom-row .times {
-  margin-right: calc(var(--slot-size) + var(--slot-gap));
+  margin-right: calc(var(--slot-size) * 0.7 + var(--slot-gap));
 }
 
 .bottom-slots {
@@ -316,20 +378,20 @@ h1 {
 
 .equals,
 .times {
-  font-size: clamp(1.5rem, 4vw, 2.2rem);
+  font-size: clamp(1rem, 2.7vw, 1.55rem);
   font-weight: 800;
 }
 
 .fixed-multiplier {
   display: grid;
   place-items: center;
-  width: var(--slot-size);
-  height: var(--slot-size);
+  width: calc(var(--slot-size) * 0.76);
+  height: calc(var(--slot-size) * 0.76);
   border-radius: 8px;
   background: #e9eefc;
   border: 2px solid #b9c8f4;
   color: #244aa5;
-  font-size: clamp(1.35rem, 4vw, 2.05rem);
+  font-size: clamp(1rem, 3vw, 1.55rem);
   font-weight: 900;
 }
 
@@ -547,6 +609,7 @@ h1 {
 
   .playfield {
     overflow-x: auto;
+    padding-inline: 10px;
   }
 
   .equation {

@@ -426,6 +426,7 @@
     els.progress.textContent = `${state.currentQuiz + 1} / ${state.quizList.length}`;
     els.feedback.textContent = `下段${state.bottomDigits}桁が埋まると自動で判定します。カードをタップすると左の空き枠へ入ります。`;
     detectFactors();
+    scrollBoardRight();
   }
 
   function showStartScreen() {
@@ -437,9 +438,10 @@
     els.pool.innerHTML = "";
     els.history.innerHTML = "";
     els.progress.textContent = `0 / ${QUIZ_COUNT}`;
-    els.timer.textContent = "0.0s";
+    els.timer.textContent = "0.00s";
     els.feedback.textContent = "設定を選んでスタートしてください。";
     ensureStartPanel();
+    scrollBoardRight();
   }
 
   function ensureStartPanel() {
@@ -669,6 +671,7 @@
     }
     state.pointerDrag = null;
     document.querySelectorAll(".drag-over").forEach((el) => el.classList.remove("drag-over"));
+    hideInsertionIndicator();
   }
 
   function startGroupPointerDrag(drag, card, event) {
@@ -732,10 +735,15 @@
 
   function highlightNearestDrop(cardId, x, y) {
     document.querySelectorAll(".drag-over").forEach((el) => el.classList.remove("drag-over"));
+    hideInsertionIndicator();
     const target = findNearestDrop(cardId, x, y);
     if (!target) return;
     if (target.type === "pool") {
       els.pool.classList.add("drag-over");
+      return;
+    }
+    if (target.insertion) {
+      showInsertionIndicator(target.insertion);
       return;
     }
     getCoveredIndices(target.row, target.index, state.cards.get(cardId).span).forEach((index) => {
@@ -790,6 +798,7 @@
         type: "slot",
         row,
         index,
+        insertion: groupInsertionHint(group, delta),
         distance: distanceToSlotRun(row, index, card.span, x, y)
       });
     }
@@ -829,6 +838,71 @@
     }
 
     placeSingleCard(cardId, target);
+  }
+
+  function groupInsertionHint(group, delta) {
+    if (delta === 0) return null;
+    const blockerIds = new Set();
+
+    groupTargetCells(group, delta).forEach((cell) => {
+      const occupantId = state.slots.get(slotKey(cell.row, cell.index));
+      if (!occupantId || group.cardIds.includes(occupantId)) return;
+      const occupant = state.cards.get(occupantId);
+      if (occupant?.groupId) blockerIds.add(occupant.groupId);
+    });
+
+    const blockers = [...blockerIds]
+      .map((groupId) => state.groups.get(groupId))
+      .filter(Boolean)
+      .map((blockingGroup) => ({ group: blockingGroup, bounds: groupGlobalBounds(blockingGroup) }))
+      .filter((item) => Number.isFinite(item.bounds.min));
+
+    if (!blockers.length) return null;
+    if (delta < 0) {
+      blockers.sort((a, b) => a.bounds.min - b.bounds.min);
+      return { boundary: blockers[0].bounds.min };
+    }
+
+    blockers.sort((a, b) => b.bounds.max - a.bounds.max);
+    return { boundary: blockers[0].bounds.max };
+  }
+
+  function showInsertionIndicator(insertion) {
+    const rect = insertionIndicatorRect(insertion.boundary);
+    if (!rect) return;
+    ensureFactorLayer();
+    const indicator = document.createElement("div");
+    indicator.className = "insert-indicator";
+    indicator.style.left = `${rect.left}px`;
+    indicator.style.top = `${rect.top}px`;
+    indicator.style.height = `${rect.height}px`;
+    els.factorLayer.appendChild(indicator);
+  }
+
+  function hideInsertionIndicator() {
+    els.factorLayer?.querySelectorAll(".insert-indicator").forEach((indicator) => indicator.remove());
+  }
+
+  function insertionIndicatorRect(boundary) {
+    const root = els.equation.getBoundingClientRect();
+    const topRow = els.topRow.getBoundingClientRect();
+    const bottomRow = els.bottomRow.getBoundingClientRect();
+    let x = null;
+
+    if (boundary <= 0) {
+      x = getSlotElement("top", 0)?.getBoundingClientRect().left;
+    } else if (boundary >= state.topDigits) {
+      x = getSlotElement("top", state.topDigits - 1)?.getBoundingClientRect().right;
+    } else {
+      x = getSlotElement("top", boundary)?.getBoundingClientRect().left;
+    }
+
+    if (x === null || x === undefined) return null;
+    return {
+      left: x - root.left - 2,
+      top: Math.min(topRow.top, bottomRow.top) - root.top - 4,
+      height: Math.max(topRow.bottom, bottomRow.bottom) - Math.min(topRow.top, bottomRow.top) + 8
+    };
   }
 
   function placeSingleCard(cardId, target) {
@@ -969,7 +1043,7 @@
   }
 
   function groupSpan(group) {
-    const bounds = groupBounds(group);
+    const bounds = groupGlobalBounds(group);
     return Math.max(1, bounds.max - bounds.min);
   }
 
@@ -981,6 +1055,19 @@
       if (!card || card.location.type !== "slot") return;
       min = Math.min(min, card.location.index);
       max = Math.max(max, card.location.index + card.span);
+    });
+    return { min, max };
+  }
+
+  function groupGlobalBounds(group) {
+    let min = Infinity;
+    let max = -Infinity;
+    group.cardIds.forEach((id) => {
+      const card = state.cards.get(id);
+      if (!card || card.location.type !== "slot") return;
+      const offset = card.location.row === "bottom" ? bottomOffset() : 0;
+      min = Math.min(min, card.location.index + offset);
+      max = Math.max(max, card.location.index + offset + card.span);
     });
     return { min, max };
   }
@@ -1099,7 +1186,7 @@
   function finishGame() {
     state.finished = true;
     window.clearInterval(state.timerId);
-    const elapsed = ((Date.now() - state.startTime) / 1000).toFixed(1);
+    const elapsed = ((Date.now() - state.startTime) / 1000).toFixed(2);
     els.progress.textContent = `${state.quizList.length} / ${state.quizList.length}`;
     els.feedback.textContent = `クリア。記録は ${elapsed} 秒です。`;
     els.pool.innerHTML = "";
@@ -1340,8 +1427,14 @@
     state.startTime = Date.now();
     state.timerId = window.setInterval(() => {
       if (state.finished) return;
-      els.timer.textContent = `${((Date.now() - state.startTime) / 1000).toFixed(1)}s`;
-    }, 100);
+      els.timer.textContent = `${((Date.now() - state.startTime) / 1000).toFixed(2)}s`;
+    }, 10);
+  }
+
+  function scrollBoardRight() {
+    window.requestAnimationFrame(() => {
+      els.playfield.scrollLeft = els.playfield.scrollWidth;
+    });
   }
 
   function init() {
