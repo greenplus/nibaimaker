@@ -293,10 +293,10 @@ h1 {
 }
 
 .factor-outline.carry-out::before {
-  left: -15px;
-  border-top: 11px solid transparent;
-  border-bottom: 11px solid transparent;
-  border-right: 15px solid rgba(24, 142, 174, 0.82);
+  left: -11px;
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+  border-right: 11px solid rgba(24, 142, 174, 0.78);
   filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 2px rgba(24, 82, 102, 0.22));
 }
 
@@ -445,11 +445,12 @@ h1 {
 
 .pool {
   --pool-card-size: min(70px, 18vw);
+  --pool-card-gap: 0px;
   min-height: 104px;
   display: flex;
   flex-wrap: wrap;
   align-content: flex-start;
-  gap: 10px;
+  gap: var(--pool-card-gap);
   padding: 14px;
   border: 2px dashed #c9d0dd;
   border-radius: 8px;
@@ -467,7 +468,7 @@ h1 {
   display: grid;
   grid-template-rows: 1fr auto 1fr;
   place-items: center;
-  width: calc(var(--pool-card-size, min(70px, 18vw)) * var(--span) + 10px * (var(--span) - 1));
+  width: calc(var(--pool-card-size, min(70px, 18vw)) * var(--span) + var(--pool-card-gap, 0px) * (var(--span) - 1));
   height: var(--pool-card-size, min(70px, 18vw));
   min-width: 44px;
   min-height: 44px;

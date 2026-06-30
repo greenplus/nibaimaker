@@ -8,7 +8,7 @@
   const STORAGE_KEY = "nibaimaker-new-settings";
   const DEFAULT_SETTINGS = {
     tapFill: "left",
-    showHints: false,
+    showHints: true,
     faceMode: "face"
   };
   const RAW_FACTOR_PAIRS = [
