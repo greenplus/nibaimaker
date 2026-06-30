@@ -746,7 +746,16 @@
       showInsertionIndicator(target.insertion);
       return;
     }
-    getCoveredIndices(target.row, target.index, state.cards.get(cardId).span).forEach((index) => {
+    const card = state.cards.get(cardId);
+    if (card?.groupId && target.restoreOriginal) {
+      const group = state.groups.get(card.groupId);
+      if (!group) return;
+      groupTargetCells(group, 0).forEach((cell) => {
+        getSlotElement(cell.row, cell.index)?.classList.add("drag-over");
+      });
+      return;
+    }
+    getCoveredIndices(target.row, target.index, card.span).forEach((index) => {
       getSlotElement(target.row, index)?.classList.add("drag-over");
     });
   }
@@ -780,6 +789,8 @@
       }
     });
 
+    bottomInsertionCandidates(card, x, y).forEach((candidate) => candidates.push(candidate));
+
     return nearestCandidate(candidates);
   }
 
@@ -793,12 +804,13 @@
 
     for (let index = 0; index <= limit - card.span; index += 1) {
       const delta = index - card.location.index;
-      if (!planGroupMove(group, delta)) continue;
+      if (delta !== 0 && !planGroupMove(group, delta)) continue;
       candidates.push({
         type: "slot",
         row,
         index,
         insertion: groupInsertionHint(group, delta),
+        restoreOriginal: delta === 0,
         distance: distanceToSlotRun(row, index, card.span, x, y)
       });
     }
@@ -838,6 +850,127 @@
     }
 
     placeSingleCard(cardId, target);
+  }
+
+  function bottomInsertionCandidates(card, x, y) {
+    if (card.location.type !== "slot" || card.location.row !== "bottom") return [];
+    const candidates = [];
+
+    for (let index = 0; index < state.bottomDigits; index += 1) {
+      const occupantId = state.slots.get(slotKey("bottom", index));
+      if (!occupantId || occupantId === card.id) continue;
+      const occupant = state.cards.get(occupantId);
+      if (!occupant || occupant.location.index !== index) continue;
+
+      const plan = planSingleBottomInsertion(card, occupant);
+      if (!plan) continue;
+      candidates.push({
+        type: "slot",
+        row: "bottom",
+        index: plan.cardIndex,
+        singlePlan: plan.moves,
+        insertion: { boundary: plan.boundary + bottomOffset() },
+        distance: distanceToSlotBoundary("bottom", plan.boundary, x, y)
+      });
+    }
+
+    return candidates;
+  }
+
+  function planSingleBottomInsertion(card, targetCard) {
+    if (card.id === targetCard.id) return null;
+    if (card.groupId || targetCard.groupId) return null;
+    if (card.location.type !== "slot" || targetCard.location.type !== "slot") return null;
+    if (card.location.row !== "bottom" || targetCard.location.row !== "bottom") return null;
+
+    const sourceStart = card.location.index;
+    const targetStart = targetCard.location.index;
+    const targetEnd = targetStart + targetCard.span;
+    if (targetStart === sourceStart) return null;
+
+    const moves = new Map();
+    let cardIndex;
+    let boundary;
+
+    if (targetStart < sourceStart) {
+      cardIndex = targetStart;
+      boundary = targetStart;
+      bottomStartCards().forEach((other) => {
+        if (other.id === card.id) return;
+        if (other.groupId) return;
+        if (other.location.index >= targetStart && other.location.index < sourceStart) {
+          moves.set(other.id, other.location.index + card.span);
+        }
+      });
+    } else {
+      cardIndex = targetEnd - card.span;
+      boundary = targetEnd;
+      bottomStartCards().forEach((other) => {
+        if (other.id === card.id) return;
+        if (other.groupId) return;
+        if (other.location.index > sourceStart && other.location.index < targetEnd) {
+          moves.set(other.id, other.location.index - card.span);
+        }
+      });
+    }
+
+    moves.set(card.id, cardIndex);
+    if (!validateSingleBottomPlan(moves)) return null;
+    return { moves, cardIndex, boundary };
+  }
+
+  function bottomStartCards() {
+    return Array.from(state.cards.values())
+      .filter((card) => card.location.type === "slot" && card.location.row === "bottom")
+      .filter((card) => state.slots.get(slotKey("bottom", card.location.index)) === card.id)
+      .sort((a, b) => a.location.index - b.location.index);
+  }
+
+  function validateSingleBottomPlan(plan) {
+    const occupied = new Map();
+    for (const card of bottomStartCards()) {
+      const index = plan.has(card.id) ? plan.get(card.id) : card.location.index;
+      if (card.groupId && plan.has(card.id)) return false;
+      if (index < 0 || index + card.span > state.bottomDigits) return false;
+      for (const coveredIndex of getCoveredIndices("bottom", index, card.span)) {
+        if (occupied.has(coveredIndex)) return false;
+        occupied.set(coveredIndex, card.id);
+      }
+    }
+    return true;
+  }
+
+  function applySingleBottomPlan(plan) {
+    const moves = [...plan.entries()].map(([cardId, index]) => ({
+      card: state.cards.get(cardId),
+      location: { type: "slot", row: "bottom", index }
+    })).filter(({ card }) => Boolean(card));
+
+    moves.forEach(({ card }) => clearCardLocation(card));
+    moves.forEach(({ card, location }) => {
+      occupyCells(card.id, location.row, location.index, card.span);
+      card.location = location;
+      getSlotElement(location.row, location.index).appendChild(card.element);
+      renderCardFace(card);
+    });
+    sortPoolCards();
+  }
+
+  function distanceToSlotBoundary(row, boundary, x, y) {
+    const limit = row === "top" ? state.topDigits : state.bottomDigits;
+    const clamped = Math.max(0, Math.min(boundary, limit));
+    let edgeX;
+
+    if (clamped <= 0) {
+      edgeX = getSlotElement(row, 0).getBoundingClientRect().left;
+    } else if (clamped >= limit) {
+      edgeX = getSlotElement(row, limit - 1).getBoundingClientRect().right;
+    } else {
+      edgeX = getSlotElement(row, clamped).getBoundingClientRect().left;
+    }
+
+    const rowRect = row === "top" ? els.topRow.getBoundingClientRect() : els.bottomRow.getBoundingClientRect();
+    return Math.hypot(edgeX - x, (rowRect.top + rowRect.bottom) / 2 - y);
   }
 
   function groupInsertionHint(group, delta) {
@@ -908,6 +1041,11 @@
   function placeSingleCard(cardId, target) {
     const card = state.cards.get(cardId);
     if (!card || target.type !== "slot") return false;
+    if (target.singlePlan) {
+      applySingleBottomPlan(target.singlePlan);
+      afterBoardChange();
+      return true;
+    }
     if (!canPlaceCells(cardId, target.row, target.index, card.span)) return false;
 
     clearCardLocation(card);
@@ -933,6 +1071,7 @@
 
     if (card.location.type !== "slot") return;
     const delta = target.index - card.location.index;
+    if (delta === 0 || target.restoreOriginal) return;
     const plan = planGroupMove(group, delta);
     if (!plan) return;
 
@@ -1190,7 +1329,7 @@
     els.progress.textContent = `${state.quizList.length} / ${state.quizList.length}`;
     els.feedback.textContent = `クリア。記録は ${elapsed} 秒です。`;
     els.pool.innerHTML = "";
-    const tweetText = `#にばいめーかー new 10問を${elapsed}秒でクリアしました\nhttps://greenplus.github.io/nibaimaker/new/`;
+    const tweetText = `#にばいめーかー new 10問を${elapsed}秒でクリアしました！\nhttps://greenplus.github.io/nibaimaker/new/`;
     els.tweet.href = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
     els.tweet.hidden = false;
   }
@@ -1205,8 +1344,14 @@
   function addHistory(text) {
     const entry = document.createElement("div");
     entry.className = "history-entry";
-    entry.textContent = `Q${state.currentQuiz + 1} ${text}`;
+    entry.textContent = `Q${state.currentQuiz + 1} 問題: ${quizProblemLabel(state.quizList[state.currentQuiz])} / ${text}`;
     els.history.prepend(entry);
+  }
+
+  function quizProblemLabel(quiz) {
+    return parseCards(detailsToCards(quiz.details))
+      .sort((a, b) => cardValue(a) - cardValue(b))
+      .join(" ");
   }
 
   function detectFactors() {
