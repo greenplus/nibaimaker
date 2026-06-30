@@ -5,6 +5,12 @@
   const SMALL_DIVISORS = [2, 3, 5, 7, 11, 13];
   const CARD_SYMBOLS = ["T", "J", "Q", "K"];
   const SYMBOL_TO_DIGITS = { T: "10", J: "11", Q: "12", K: "13" };
+  const STORAGE_KEY = "nibaimaker-new-settings";
+  const DEFAULT_SETTINGS = {
+    tapFill: "left",
+    showHints: false,
+    faceMode: "face"
+  };
   const RAW_FACTOR_PAIRS = [
     ["0", "0"], ["0", "1"],
     ["1", "2"], ["1", "3"],
@@ -45,7 +51,9 @@
     groups: new Map(),
     pointerDrag: null,
     suppressClickUntil: 0,
-    finished: false
+    finished: false,
+    started: false,
+    settings: loadSettings()
   };
 
   const els = {
@@ -60,8 +68,21 @@
     flash: document.getElementById("judge-flash"),
     reset: document.getElementById("reset-board"),
     tweet: document.getElementById("tweet-link"),
+    playfield: document.querySelector(".playfield"),
     factorLayer: null
   };
+
+  function loadSettings() {
+    try {
+      return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}") };
+    } catch (_) {
+      return { ...DEFAULT_SETTINGS };
+    }
+  }
+
+  function saveSettings() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.settings));
+  }
 
   function generatePrimes(limit) {
     const primes = [2];
@@ -103,6 +124,14 @@
 
   function cardDigits(label) {
     return SYMBOL_TO_DIGITS[label] || label;
+  }
+
+  function cardValue(label) {
+    return CARD_SYMBOLS.includes(label) ? CARD_SYMBOLS.indexOf(label) + 10 : Number(label);
+  }
+
+  function displayLabel(label) {
+    return state.settings.faceMode === "number" ? cardDigits(label) : label;
   }
 
   function sequenceDigitWidth(cards) {
@@ -321,13 +350,12 @@
     const card = document.createElement("button");
     card.type = "button";
     card.className = "card";
-    card.textContent = label;
     card.draggable = false;
     card.dataset.cardId = id;
     card.dataset.label = label;
     card.dataset.span = String(span);
     card.style.setProperty("--span", String(span));
-    card.setAttribute("aria-label", `${label} のカード`);
+    card.setAttribute("aria-label", `${displayLabel(label)} のカード`);
     card.addEventListener("pointerdown", onPointerDown);
     card.addEventListener("click", onCardClick);
 
@@ -340,7 +368,37 @@
       groupId: null
     });
 
+    renderCardFace(state.cards.get(id));
     return card;
+  }
+
+  function renderCardFace(card) {
+    const topHints = factorHintLabels(card.label, "bottom").map(displayLabel).join(" ");
+    const bottomHints = factorHintLabels(card.label, "top").map(displayLabel).join(" ");
+    const showTop = state.settings.showHints && card.location.row !== "top";
+    const showBottom = state.settings.showHints && card.location.row !== "bottom";
+    card.element.innerHTML = `
+      <span class="card-hints card-hints-top"${showTop ? "" : " hidden"}>${topHints}</span>
+      <span class="card-main">${displayLabel(card.label)}</span>
+      <span class="card-hints card-hints-bottom"${showBottom ? "" : " hidden"}>${bottomHints}</span>
+    `;
+    card.element.setAttribute("aria-label", `${displayLabel(card.label)} のカード`);
+  }
+
+  function refreshCardFaces() {
+    state.cards.forEach((card) => renderCardFace(card));
+  }
+
+  function factorHintLabels(label, asRow) {
+    const labels = new Set();
+    FACTOR_PAIRS.forEach((pattern) => {
+      const bottom = pattern.bottom.length === 1 ? pattern.bottom[0].label : null;
+      const top = pattern.top.length === 1 ? pattern.top[0].label : null;
+      if (!bottom || !top) return;
+      if (asRow === "bottom" && bottom === label) labels.add(top);
+      if (asRow === "top" && top === label) labels.add(bottom);
+    });
+    return [...labels].sort((a, b) => cardValue(a) - cardValue(b));
   }
 
   function renderQuiz() {
@@ -363,10 +421,94 @@
     shuffleString(quiz.cards).forEach((label) => {
       els.pool.appendChild(makeCard(label));
     });
+    sortPoolCards();
 
     els.progress.textContent = `${state.currentQuiz + 1} / ${state.quizList.length}`;
     els.feedback.textContent = `下段${state.bottomDigits}桁が埋まると自動で判定します。カードをタップすると左の空き枠へ入ります。`;
     detectFactors();
+  }
+
+  function showStartScreen() {
+    state.started = false;
+    state.finished = false;
+    initSlots(5, 5);
+    els.equation.classList.add("is-waiting");
+    els.pool.innerHTML = "";
+    els.history.innerHTML = "";
+    els.progress.textContent = `0 / ${QUIZ_COUNT}`;
+    els.timer.textContent = "0.0s";
+    els.feedback.textContent = "設定を選んでスタートしてください。";
+    ensureStartPanel();
+  }
+
+  function ensureStartPanel() {
+    els.playfield.querySelector(".start-panel")?.remove();
+    const panel = document.createElement("div");
+    panel.className = "start-panel";
+    panel.innerHTML = `
+      <div class="start-panel-inner">
+        <h2>にばいめーかー</h2>
+        <div class="setting-list">
+          ${settingToggle("tapFill", "タップ配置", [
+            ["left", "左から"],
+            ["right", "右詰め"]
+          ])}
+          ${settingToggle("showHints", "因子候補", [
+            ["off", "オフ"],
+            ["on", "オン"]
+          ])}
+          ${settingToggle("faceMode", "絵札表示", [
+            ["face", "TJQK"],
+            ["number", "10-13"]
+          ])}
+        </div>
+        <button class="start-button" type="button">スタート</button>
+      </div>
+    `;
+    panel.addEventListener("click", onStartPanelClick);
+    els.playfield.appendChild(panel);
+  }
+
+  function settingToggle(key, label, options) {
+    return `
+      <fieldset class="setting-toggle" data-setting="${key}">
+        <legend>${label}</legend>
+        ${options.map(([value, text]) => {
+          const checked = settingValue(key) === value ? " checked" : "";
+          return `<label><input type="radio" name="${key}" value="${value}"${checked}>${text}</label>`;
+        }).join("")}
+      </fieldset>
+    `;
+  }
+
+  function settingValue(key) {
+    if (key === "showHints") return state.settings.showHints ? "on" : "off";
+    return state.settings[key];
+  }
+
+  function onStartPanelClick(event) {
+    const input = event.target.closest("input[type='radio']");
+    if (input) {
+      const key = input.name;
+      state.settings[key] = key === "showHints" ? input.value === "on" : input.value;
+      saveSettings();
+      return;
+    }
+
+    if (event.target.closest(".start-button")) {
+      startGame();
+    }
+  }
+
+  function startGame() {
+    els.playfield.querySelector(".start-panel")?.remove();
+    els.equation.classList.remove("is-waiting");
+    state.currentQuiz = 0;
+    state.finished = false;
+    state.started = true;
+    els.tweet.hidden = true;
+    renderQuiz();
+    startTimer();
   }
 
   function shuffleString(value) {
@@ -383,7 +525,7 @@
       return;
     }
 
-    const emptyIndex = findFirstBottomFit(card);
+    const emptyIndex = findTapBottomFit(card);
     if (emptyIndex === -1) return;
     placeSingleCard(cardId, { type: "slot", row: "bottom", index: emptyIndex });
   }
@@ -449,10 +591,16 @@
 
   function startPointerDrag(drag, event) {
     const card = state.cards.get(drag.cardId);
+    if (card.groupId) {
+      startGroupPointerDrag(drag, card, event);
+      return;
+    }
+
     const rect = card.element.getBoundingClientRect();
     drag.offsetX = event.clientX - rect.left;
     drag.offsetY = event.clientY - rect.top;
     drag.active = true;
+    drag.kind = "card";
     card.element.style.width = `${rect.width}px`;
     card.element.style.height = `${rect.height}px`;
     card.element.classList.add("dragging-card");
@@ -461,6 +609,12 @@
   }
 
   function moveDraggingCard(drag, x, y) {
+    if (drag.kind === "group") {
+      drag.bundle.style.left = `${x - drag.offsetX}px`;
+      drag.bundle.style.top = `${y - drag.offsetY}px`;
+      return;
+    }
+
     const card = state.cards.get(drag.cardId);
     card.element.style.left = `${x - drag.offsetX}px`;
     card.element.style.top = `${y - drag.offsetY}px`;
@@ -471,7 +625,13 @@
     const drag = state.pointerDrag;
     if (drag) {
       const card = state.cards.get(drag.cardId);
-      if (card) {
+      if (drag.kind === "group") {
+        drag.hiddenCards?.forEach((hiddenCard) => {
+          hiddenCard.element.style.visibility = "";
+        });
+        drag.hiddenOutline?.style.removeProperty("visibility");
+        drag.bundle?.remove();
+      } else if (card) {
         card.element.classList.remove("dragging-card");
         card.element.style.left = "";
         card.element.style.top = "";
@@ -482,6 +642,57 @@
     }
     state.pointerDrag = null;
     document.querySelectorAll(".drag-over").forEach((el) => el.classList.remove("drag-over"));
+  }
+
+  function startGroupPointerDrag(drag, card, event) {
+    const group = state.groups.get(card.groupId);
+    if (!group) return;
+    const members = group.cardIds.map((id) => state.cards.get(id)).filter(Boolean);
+    const outline = els.factorLayer.querySelector(`.factor-outline[data-group-id="${group.id}"]`);
+    const rects = members.map((member) => member.element.getBoundingClientRect());
+    if (outline) rects.push(outline.getBoundingClientRect());
+    const left = Math.min(...rects.map((rect) => rect.left));
+    const top = Math.min(...rects.map((rect) => rect.top));
+    const right = Math.max(...rects.map((rect) => rect.right));
+    const bottom = Math.max(...rects.map((rect) => rect.bottom));
+
+    drag.kind = "group";
+    drag.active = true;
+    drag.offsetX = event.clientX - left;
+    drag.offsetY = event.clientY - top;
+    drag.hiddenCards = members;
+    drag.hiddenOutline = outline;
+    drag.bundle = document.createElement("div");
+    drag.bundle.className = "dragging-factor";
+    drag.bundle.style.width = `${right - left}px`;
+    drag.bundle.style.height = `${bottom - top}px`;
+
+    if (outline) {
+      const outlineRect = outline.getBoundingClientRect();
+      const outlineClone = outline.cloneNode(true);
+      outlineClone.classList.add("dragging-factor-outline");
+      outlineClone.style.left = `${outlineRect.left - left}px`;
+      outlineClone.style.top = `${outlineRect.top - top}px`;
+      outlineClone.style.width = `${outlineRect.width}px`;
+      outlineClone.style.height = `${outlineRect.height}px`;
+      drag.bundle.appendChild(outlineClone);
+      outline.style.visibility = "hidden";
+    }
+
+    members.forEach((member) => {
+      const rect = member.element.getBoundingClientRect();
+      const clone = member.element.cloneNode(true);
+      clone.classList.add("dragging-factor-card");
+      clone.style.left = `${rect.left - left}px`;
+      clone.style.top = `${rect.top - top}px`;
+      clone.style.width = `${rect.width}px`;
+      clone.style.height = `${rect.height}px`;
+      drag.bundle.appendChild(clone);
+      member.element.style.visibility = "hidden";
+    });
+
+    document.body.appendChild(drag.bundle);
+    moveDraggingCard(drag, event.clientX, event.clientY);
   }
 
   function restoreCardDom(card) {
@@ -598,6 +809,8 @@
     occupyCells(cardId, target.row, target.index, card.span);
     card.location = target;
     getSlotElement(target.row, target.index).appendChild(card.element);
+    renderCardFace(card);
+    sortPoolCards();
     afterBoardChange();
     return true;
   }
@@ -706,7 +919,9 @@
       occupyCells(card.id, location.row, location.index, card.span);
       card.location = location;
       getSlotElement(location.row, location.index).appendChild(card.element);
+      renderCardFace(card);
     });
+    sortPoolCards();
   }
 
   function groupTargetCells(group, delta) {
@@ -753,6 +968,8 @@
     clearCardLocation(card);
     card.location = { type: "pool" };
     els.pool.appendChild(card.element);
+    renderCardFace(card);
+    sortPoolCards();
     afterBoardChange();
   }
 
@@ -762,7 +979,9 @@
       clearCardLocation(card);
       card.location = { type: "pool" };
       els.pool.appendChild(card.element);
+      renderCardFace(card);
     });
+    sortPoolCards();
     afterBoardChange();
   }
 
@@ -796,6 +1015,7 @@
   }
 
   function afterBoardChange() {
+    refreshCardFaces();
     detectFactors();
     const answer = getBottomAnswer();
     if (answer) judge(answer);
@@ -939,37 +1159,45 @@
   function renderFactorOutlines(matches) {
     ensureFactorLayer();
     els.factorLayer.innerHTML = "";
-    matches.forEach((match) => {
-      renderRowOutline(match, "top", match.topRun);
-      renderRowOutline(match, "bottom", match.bottomRun);
-    });
+    matches.forEach(renderFactorOutline);
   }
 
-  function renderRowOutline(match, row, run) {
-    if (!run || run.start < 0 || run.end <= run.start) return;
-    const first = getSlotElement(row, run.start);
-    const last = getSlotElement(row, run.end - 1);
-    if (!first || !last) return;
+  function renderFactorOutline(match) {
+    if (!match.topRun || !match.bottomRun) return;
+    const topFirst = getSlotElement("top", match.topRun.start);
+    const topLast = getSlotElement("top", match.topRun.end - 1);
+    const bottomFirst = getSlotElement("bottom", match.bottomRun.start);
+    const bottomLast = getSlotElement("bottom", match.bottomRun.end - 1);
+    if (!topFirst || !topLast || !bottomFirst || !bottomLast) return;
 
     const root = els.equation.getBoundingClientRect();
-    const firstRect = first.getBoundingClientRect();
-    const lastRect = last.getBoundingClientRect();
+    const rects = [topFirst, topLast, bottomFirst, bottomLast].map((el) => el.getBoundingClientRect());
+    const left = Math.min(...rects.map((rect) => rect.left));
+    const right = Math.max(...rects.map((rect) => rect.right));
+    const top = Math.min(...rects.map((rect) => rect.top));
+    const bottom = Math.max(...rects.map((rect) => rect.bottom));
+    const topBottom = topFirst.getBoundingClientRect().bottom;
+    const bottomTop = bottomFirst.getBoundingClientRect().top;
     const outline = document.createElement("div");
     outline.className = "factor-outline";
+    outline.dataset.groupId = match.groupId;
     if (match.carryIn) outline.classList.add("carry-in");
     if (match.carryOut) outline.classList.add("carry-out");
-    outline.style.left = `${firstRect.left - root.left - 5}px`;
-    outline.style.top = `${firstRect.top - root.top - 5}px`;
-    outline.style.width = `${lastRect.right - firstRect.left + 10}px`;
-    outline.style.height = `${firstRect.height + 10}px`;
+    outline.style.left = `${left - root.left - 5}px`;
+    outline.style.top = `${top - root.top - 5}px`;
+    outline.style.width = `${right - left + 10}px`;
+    outline.style.height = `${bottom - top + 10}px`;
+    outline.style.setProperty("--factor-joint-y", `${(topBottom + bottomTop) / 2 - top + 5}px`);
 
-    for (let index = run.start + 1; index < run.end; index += 1) {
-      const dividerSlot = getSlotElement(row, index);
+    const start = Math.min(match.topRun.start, match.bottomRun.start + bottomOffset());
+    const end = Math.max(match.topRun.end, match.bottomRun.end + bottomOffset());
+    for (let index = start + 1; index < end; index += 1) {
+      const dividerSlot = getSlotElement("top", index) || getSlotElement("bottom", index - bottomOffset());
       if (!dividerSlot) continue;
       const dividerRect = dividerSlot.getBoundingClientRect();
       const divider = document.createElement("span");
       divider.className = "factor-divider";
-      divider.style.left = `${dividerRect.left - firstRect.left + 5}px`;
+      divider.style.left = `${dividerRect.left - left + 5}px`;
       outline.appendChild(divider);
     }
 
@@ -988,11 +1216,26 @@
     return true;
   }
 
-  function findFirstBottomFit(card) {
+  function findTapBottomFit(card) {
+    if (state.settings.tapFill === "right") {
+      for (let i = state.bottomDigits - card.span; i >= 0; i -= 1) {
+        if (canPlaceCells(card.id, "bottom", i, card.span)) return i;
+      }
+      return -1;
+    }
+
     for (let i = 0; i <= state.bottomDigits - card.span; i += 1) {
       if (canPlaceCells(card.id, "bottom", i, card.span)) return i;
     }
     return -1;
+  }
+
+  function sortPoolCards() {
+    const poolCards = Array.from(els.pool.querySelectorAll(".card"))
+      .map((element) => state.cards.get(element.dataset.cardId))
+      .filter(Boolean)
+      .sort((a, b) => cardValue(a.label) - cardValue(b.label) || a.id.localeCompare(b.id));
+    poolCards.forEach((card) => els.pool.appendChild(card.element));
   }
 
   function slotKey(row, index) {
@@ -1012,11 +1255,14 @@
       clearCardLocation(card);
       card.location = { type: "pool" };
       els.pool.appendChild(card.element);
+      renderCardFace(card);
     });
+    sortPoolCards();
     afterBoardChange();
   }
 
   function startTimer() {
+    window.clearInterval(state.timerId);
     state.startTime = Date.now();
     state.timerId = window.setInterval(() => {
       if (state.finished) return;
@@ -1027,8 +1273,7 @@
   function init() {
     state.quizList = buildQuizList();
     els.reset.addEventListener("click", resetBoard);
-    renderQuiz();
-    startTimer();
+    showStartScreen();
   }
 
   init();
