@@ -125,13 +125,15 @@ h1 {
   inset: 0;
   z-index: 10;
   display: grid;
-  place-items: center;
+  place-items: start center;
+  overflow-y: auto;
   padding: 8px;
   background: rgba(255, 255, 255, 0.82);
 }
 
 .start-panel-inner {
   width: min(520px, 100%);
+  margin: auto 0;
   display: grid;
   gap: 8px;
   justify-items: center;
@@ -274,6 +276,56 @@ h1 {
   background: rgba(245, 255, 247, 0.36);
 }
 
+.factor-outline.factor-style-dynamic {
+  --factor-notch: clamp(10px, 2.2vw, 18px);
+  --factor-left-top: 0px;
+  --factor-left-mid: 0px;
+  --factor-right-top: 100%;
+  --factor-right-mid: 100%;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.factor-outline.factor-style-dynamic.carry-out {
+  --factor-left-top: var(--factor-notch);
+}
+
+.factor-outline.factor-style-dynamic.carry-in {
+  --factor-right-mid: calc(100% - var(--factor-notch));
+}
+
+.factor-outline.factor-style-dynamic::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  padding: 3px;
+  background: #111827;
+  clip-path: polygon(
+    var(--factor-left-top) 0,
+    var(--factor-right-top) 0,
+    var(--factor-right-mid) 50%,
+    var(--factor-right-top) 100%,
+    var(--factor-left-top) 100%,
+    var(--factor-left-mid) 50%
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+.factor-outline.factor-style-dynamic::after {
+  content: none;
+}
+
+.factor-outline.factor-style-dynamic .factor-divider {
+  display: none;
+}
+
 .factor-divider {
   position: absolute;
   top: 0;
@@ -309,6 +361,25 @@ h1 {
   border-right: 15px solid rgba(238, 158, 44, 0.78);
   filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 2px rgba(120, 80, 10, 0.2));
   mix-blend-mode: multiply;
+}
+
+.factor-outline.factor-style-dynamic::before {
+  inset: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: auto;
+  height: auto;
+  transform: none;
+  border: 0;
+  filter: none;
+}
+
+.factor-outline.factor-style-dynamic::after {
+  content: none;
+  border: 0;
+  filter: none;
+  mix-blend-mode: normal;
 }
 
 .insert-indicator {

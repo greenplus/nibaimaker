@@ -9,7 +9,8 @@
   const DEFAULT_SETTINGS = {
     tapFill: "left",
     showHints: true,
-    faceMode: "face"
+    faceMode: "face",
+    factorStyle: "original"
   };
   const RAW_FACTOR_PAIRS = [
     ["0", "0"], ["0", "1"],
@@ -463,6 +464,10 @@
             ["face", "TJQK"],
             ["number", "10-13"]
           ])}
+          ${settingToggle("factorStyle", "因子枠", [
+            ["original", "オリジナル"],
+            ["dynamic", "ダイナミック"]
+          ])}
         </div>
         <button class="start-button" type="button">スタート</button>
       </div>
@@ -802,7 +807,7 @@
       }
     });
 
-    bottomInsertionCandidates(card, x, y).forEach((candidate) => candidates.push(candidate));
+    bottomUnitInsertionCandidates(card, x, y).forEach((candidate) => candidates.push(candidate));
 
     return nearestCandidate(candidates);
   }
@@ -827,6 +832,7 @@
         distance: distanceToSlotRun(row, index, card.span, x, y)
       });
     }
+    bottomUnitInsertionCandidates(card, x, y).forEach((candidate) => candidates.push(candidate));
 
     return nearestCandidate(candidates);
   }
@@ -889,6 +895,118 @@
     }
 
     return candidates;
+  }
+
+  function bottomUnitInsertionCandidates(card, x, y) {
+    const draggedUnit = bottomUnitForCard(card);
+    if (!draggedUnit) return [];
+
+    const boundaries = new Set([0, state.bottomDigits]);
+    bottomMovableUnits().forEach((unit) => {
+      if (unit.id === draggedUnit.id) return;
+      boundaries.add(unit.start);
+      boundaries.add(unit.end);
+    });
+
+    return [...boundaries]
+      .map((boundary) => planBottomUnitInsertion(draggedUnit, boundary))
+      .filter(Boolean)
+      .map((plan) => ({
+        type: "slot",
+        row: "bottom",
+        index: plan.start,
+        movePlan: plan.movePlan,
+        insertion: { boundary: plan.boundary + bottomOffset() },
+        distance: distanceToInsertionBoundary(plan.boundary + bottomOffset(), x, y)
+      }));
+  }
+
+  function planBottomUnitInsertion(draggedUnit, boundary) {
+    if (boundary >= draggedUnit.start && boundary <= draggedUnit.end) return null;
+
+    const movePlan = { groups: new Map(), singles: new Map() };
+    const span = draggedUnit.span;
+    let start;
+
+    if (boundary < draggedUnit.start) {
+      start = boundary;
+      bottomMovableUnits().forEach((unit) => {
+        if (unit.id === draggedUnit.id) return;
+        if (unit.start >= boundary && unit.start < draggedUnit.start) {
+          addUnitMove(movePlan, unit, unit.start + span);
+        }
+      });
+    } else {
+      start = boundary - span;
+      bottomMovableUnits().forEach((unit) => {
+        if (unit.id === draggedUnit.id) return;
+        if (unit.start >= draggedUnit.end && unit.start < boundary) {
+          addUnitMove(movePlan, unit, unit.start - span);
+        }
+      });
+    }
+
+    addUnitMove(movePlan, draggedUnit, start);
+    if (!validateGroupMovePlan(movePlan)) return null;
+    return { movePlan, start, boundary };
+  }
+
+  function addUnitMove(movePlan, unit, newStart) {
+    const delta = newStart - unit.start;
+    if (unit.groupId) {
+      movePlan.groups.set(unit.groupId, delta);
+    } else {
+      movePlan.singles.set(unit.cardId, newStart);
+    }
+  }
+
+  function bottomUnitForCard(card) {
+    if (!card || card.location.type !== "slot") return null;
+    if (card.groupId) {
+      const group = state.groups.get(card.groupId);
+      if (!group || group.immovable) return null;
+      return unitFromGroup(group);
+    }
+    if (card.location.row !== "bottom") return null;
+    return unitFromSingle(card);
+  }
+
+  function bottomMovableUnits() {
+    const units = new Map();
+    bottomStartCards().forEach((card) => {
+      if (card.groupId) {
+        const group = state.groups.get(card.groupId);
+        if (!group || group.immovable || units.has(`group:${group.id}`)) return;
+        const unit = unitFromGroup(group);
+        if (unit) units.set(unit.id, unit);
+        return;
+      }
+      const unit = unitFromSingle(card);
+      if (unit) units.set(unit.id, unit);
+    });
+    return [...units.values()].sort((a, b) => a.start - b.start || a.end - b.end);
+  }
+
+  function unitFromGroup(group) {
+    const bounds = groupBottomBounds(group);
+    if (!Number.isFinite(bounds.min)) return null;
+    return {
+      id: `group:${group.id}`,
+      groupId: group.id,
+      start: bounds.min,
+      end: bounds.max,
+      span: bounds.max - bounds.min
+    };
+  }
+
+  function unitFromSingle(card) {
+    return {
+      id: `card:${card.id}`,
+      cardId: card.id,
+      start: card.location.index,
+      end: card.location.index + card.span,
+      span: card.span
+    };
   }
 
   function planSingleBottomInsertion(card, targetCard) {
@@ -1030,6 +1148,13 @@
     return Math.hypot(edgeX - x, (rowRect.top + rowRect.bottom) / 2 - y);
   }
 
+  function distanceToInsertionBoundary(boundary, x, y) {
+    const rect = insertionIndicatorRect(boundary);
+    if (!rect) return Infinity;
+    const root = els.equation.getBoundingClientRect();
+    return Math.hypot(root.left + rect.left - x, root.top + rect.top + rect.height / 2 - y);
+  }
+
   function groupInsertionHint(group, delta) {
     if (delta === 0) return null;
     const blockers = [];
@@ -1138,6 +1263,11 @@
     if (group.immovable) return;
 
     if (card.location.type !== "slot") return;
+    if (target.movePlan) {
+      applyGroupMovePlan(target.movePlan);
+      afterBoardChange();
+      return;
+    }
     const delta = target.index - card.location.index;
     if (delta === 0 || target.restoreOriginal) return;
     const plan = planGroupMove(group, delta);
@@ -1268,8 +1398,9 @@
       });
     }
 
-    moves.forEach(({ card }) => clearCardLocation(card));
+    moves.filter(({ card }) => Boolean(card)).forEach(({ card }) => clearCardLocation(card));
     moves.forEach(({ card, location }) => {
+      if (!card) return;
       occupyCells(card.id, location.row, location.index, card.span);
       card.location = location;
       getSlotElement(location.row, location.index).appendChild(card.element);
@@ -1471,7 +1602,7 @@
   function quizProblemLabel(quiz) {
     return parseCards(detailsToCards(quiz.details))
       .sort((a, b) => cardValue(a) - cardValue(b))
-      .join(" ");
+      .join("");
   }
 
   function detectFactors() {
@@ -1581,6 +1712,7 @@
       : (firstVirtual ? firstVirtual.top : topFirst.getBoundingClientRect().top);
     const outline = document.createElement("div");
     outline.className = "factor-outline";
+    outline.classList.add(`factor-style-${state.settings.factorStyle}`);
     outline.dataset.groupId = match.groupId;
     if (match.carryIn) outline.classList.add("carry-in");
     if (match.carryOut) outline.classList.add("carry-out");
