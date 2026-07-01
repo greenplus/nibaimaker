@@ -259,7 +259,7 @@ h1 {
 .factor-layer {
   position: absolute;
   inset: 0;
-  z-index: 4;
+  z-index: 8;
   pointer-events: none;
 }
 
@@ -267,13 +267,13 @@ h1 {
   position: absolute;
   border: 3px solid var(--factor);
   border-radius: 6px;
-  background: rgba(244, 255, 246, 0.28);
+  background: transparent;
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.76);
 }
 
 .factor-outline.carry-in.carry-out {
   border-color: #5e9d82;
-  background: rgba(245, 255, 247, 0.36);
+  background: transparent;
 }
 
 .factor-outline.factor-style-dynamic {
@@ -303,7 +303,7 @@ h1 {
   inset: 0;
   z-index: 2;
   padding: 3px;
-  background: #111827;
+  background: var(--factor);
   clip-path: polygon(
     var(--factor-left-top) 0,
     var(--factor-right-top) 0,
@@ -627,11 +627,11 @@ h1 {
 }
 
 .card.factor {
-  background: #f4fff6;
+  background: var(--card);
 }
 
 .card.in-group {
-  box-shadow: inset 0 0 0 2px rgba(74, 154, 104, 0.1);
+  box-shadow: none;
 }
 
 .result-strip {
