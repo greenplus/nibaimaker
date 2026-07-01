@@ -247,6 +247,8 @@ h1 {
 }
 
 .equation {
+  --factor-gutter: clamp(18px, 3.2vw, 28px);
+  --factor-outline-pad: 6px;
   position: relative;
   z-index: 1;
   isolation: isolate;
@@ -254,7 +256,7 @@ h1 {
   gap: 14px;
   justify-content: center;
   justify-items: end;
-  padding: 2px 0;
+  padding: var(--factor-gutter);
 }
 
 .factor-layer {

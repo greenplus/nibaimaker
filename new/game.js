@@ -1710,17 +1710,18 @@
     const bottomTop = bottomFirst
       ? bottomFirst.getBoundingClientRect().top
       : (firstVirtual ? firstVirtual.top : topFirst.getBoundingClientRect().top);
+    const gutter = factorOutlinePadPixels();
     const outline = document.createElement("div");
     outline.className = "factor-outline";
     outline.classList.add(`factor-style-${state.settings.factorStyle}`);
     outline.dataset.groupId = match.groupId;
     if (match.carryIn) outline.classList.add("carry-in");
     if (match.carryOut) outline.classList.add("carry-out");
-    outline.style.left = `${left - root.left - 5}px`;
-    outline.style.top = `${top - root.top - 5}px`;
-    outline.style.width = `${right - left + 10}px`;
-    outline.style.height = `${bottom - top + 10}px`;
-    outline.style.setProperty("--factor-joint-y", `${(topBottom + bottomTop) / 2 - top + 5}px`);
+    outline.style.left = `${left - root.left - gutter}px`;
+    outline.style.top = `${top - root.top - gutter}px`;
+    outline.style.width = `${right - left + gutter * 2}px`;
+    outline.style.height = `${bottom - top + gutter * 2}px`;
+    outline.style.setProperty("--factor-joint-y", `${(topBottom + bottomTop) / 2 - top + gutter}px`);
 
     const start = Math.min(match.topRun.start, match.bottomRun.start + bottomOffset());
     const end = Math.max(match.topRun.end, match.bottomRun.end + bottomOffset());
@@ -1730,7 +1731,7 @@
       const dividerRect = dividerSlot.getBoundingClientRect();
       const divider = document.createElement("span");
       divider.className = "factor-divider";
-      divider.style.left = `${dividerRect.left - left + 5}px`;
+      divider.style.left = `${dividerRect.left - left + gutter}px`;
       outline.appendChild(divider);
     }
 
@@ -1756,6 +1757,11 @@
   function slotGapPixels() {
     const gap = getComputedStyle(els.equation).getPropertyValue("--slot-gap").trim();
     return Number.parseFloat(gap) || 0;
+  }
+
+  function factorOutlinePadPixels() {
+    const gutter = getComputedStyle(els.equation).getPropertyValue("--factor-outline-pad").trim();
+    return Number.parseFloat(gutter) || 6;
   }
 
   function matchToken(row, index, token, cardIds, virtualCells) {
