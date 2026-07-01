@@ -249,6 +249,7 @@ h1 {
 .equation {
   position: relative;
   z-index: 1;
+  isolation: isolate;
   display: grid;
   gap: 14px;
   justify-content: center;
@@ -259,7 +260,8 @@ h1 {
 .factor-layer {
   position: absolute;
   inset: 0;
-  z-index: 8;
+  z-index: 40;
+  overflow: visible;
   pointer-events: none;
 }
 
@@ -594,7 +596,7 @@ h1 {
   min-width: 0;
   min-height: 0;
   box-shadow: none;
-  z-index: 2;
+  z-index: 1;
 }
 
 .card:active {
@@ -617,7 +619,7 @@ h1 {
 
 .dragging-factor-outline {
   position: absolute;
-  z-index: 1;
+  z-index: 5;
 }
 
 .dragging-factor-card {
