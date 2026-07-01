@@ -521,6 +521,7 @@
   }
 
   function onCardClick(event) {
+    if (state.pointerDrag) return;
     if (state.pointerWasDrag) {
       state.pointerWasDrag = false;
       return;
@@ -539,6 +540,11 @@
 
   function onPointerDown(event) {
     if (event.button !== 0 || state.finished) return;
+    if (state.pointerDrag) {
+      event.preventDefault();
+      state.suppressClickUntil = Date.now() + 250;
+      return;
+    }
     const cardId = event.currentTarget.dataset.cardId;
     const card = state.cards.get(cardId);
     if (!card) return;
@@ -553,14 +559,15 @@
     };
     card.element.setPointerCapture?.(event.pointerId);
     window.addEventListener("pointermove", onPointerMove, { passive: false });
-    window.addEventListener("pointerup", onPointerUp, { once: true });
-    window.addEventListener("pointercancel", onPointerCancel, { once: true });
-    window.addEventListener("blur", onPointerCancel, { once: true });
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerCancel);
+    window.addEventListener("blur", onPointerCancel);
   }
 
   function onPointerMove(event) {
     const drag = state.pointerDrag;
     if (!drag) return;
+    if (event.pointerId !== drag.pointerId) return;
 
     const dx = event.clientX - drag.startX;
     const dy = event.clientY - drag.startY;
@@ -582,6 +589,7 @@
 
   function onPointerUp(event) {
     const drag = state.pointerDrag;
+    if (drag && event.pointerId !== drag.pointerId) return;
     if (!drag || !drag.active) {
       if (drag?.startedInPool) {
         const card = state.cards.get(drag.cardId);
@@ -608,7 +616,9 @@
     placeCardOrGroup(cardId, target);
   }
 
-  function onPointerCancel() {
+  function onPointerCancel(event) {
+    const drag = state.pointerDrag;
+    if (event?.pointerId !== undefined && drag && event.pointerId !== drag.pointerId) return;
     cleanupDrag({ restore: true });
   }
 
@@ -651,6 +661,9 @@
 
   function cleanupDrag({ restore = false } = {}) {
     window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", onPointerUp);
+    window.removeEventListener("pointercancel", onPointerCancel);
+    window.removeEventListener("blur", onPointerCancel);
     const drag = state.pointerDrag;
     if (drag) {
       const card = state.cards.get(drag.cardId);
